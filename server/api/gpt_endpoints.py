@@ -1,6 +1,7 @@
 """
 GPT端点（HTTP+SSE）
 """
+import asyncio
 from fastapi import APIRouter, Query, HTTPException
 from pydantic import BaseModel
 from typing import Optional, Literal
@@ -111,23 +112,63 @@ async def gpt_endpoint_post(
     
     mode: Literal["brief", "full"] = "brief" if brief else "full"
     
-    # 创建异步生成器
+    # 创建异步生成器（真正的流式输出）
     async def answer_generator():
-        # 使用队列收集流式输出
-        chunks = []
+        # 使用队列实现真正的流式传输
+        queue = asyncio.Queue()
+        error_occurred = False
+        error_message = None
         
         async def stream_callback(chunk: str):
-            chunks.append(chunk)
+            """流式回调：将chunk放入队列"""
+            if not error_occurred:
+                await queue.put(('chunk', chunk))
         
-        # 生成答案（会调用stream_callback）
-        await agent.generate_answer(
-            question=question,
-            mode=mode,
-            stream_callback=stream_callback
-        )
+        async def generate_task():
+            """生成任务：在后台运行，将chunks放入队列"""
+            nonlocal error_occurred, error_message
+            try:
+                await agent.generate_answer(
+                    question=question,
+                    mode=mode,
+                    stream_callback=stream_callback
+                )
+            except Exception as e:
+                error_occurred = True
+                error_message = str(e)
+                logger.error(f"生成答案时出错: {e}", exc_info=True)
+            finally:
+                await queue.put(('done', None))  # 发送结束信号
         
-        # 将收集的chunks yield出去
-        for chunk in chunks:
-            yield chunk
+        # 启动生成任务（后台运行）
+        task = asyncio.create_task(generate_task())
+        
+        # 从队列中取出chunks并yield（真正的流式）
+        while True:
+            try:
+                # 使用超时避免永久阻塞
+                item_type, item = await asyncio.wait_for(queue.get(), timeout=300.0)
+                
+                if item_type == 'chunk':
+                    yield item
+                elif item_type == 'done':
+                    # 检查是否有错误
+                    if error_occurred:
+                        logger.error(f"生成过程中发生错误: {error_message}")
+                    break
+            except asyncio.TimeoutError:
+                logger.error("流式生成超时")
+                break
+            except Exception as e:
+                logger.error(f"流式生成异常: {e}", exc_info=True)
+                break
+        
+        # 确保任务完成
+        if not task.done():
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
     
     return await sse_response(answer_generator())
