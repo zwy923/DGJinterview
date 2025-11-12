@@ -14,6 +14,9 @@ from logs import setup_logger
 
 logger = setup_logger(__name__)
 
+# 项目/实习相关关键词白名单
+PROJECT_HINTS = ["项目", "实习", "project", "experience", "intern", "develop", "build", "实现", "开发"]
+
 
 class RAGService:
     """RAG检索服务"""
@@ -24,7 +27,7 @@ class RAGService:
     
     def _extract_keywords(self, text: str) -> List[str]:
         """
-        从问题中提取关键词（简单实现）
+        从问题中提取关键词（改进版：支持中英文混合）
         
         Args:
             text: 问题文本
@@ -32,10 +35,10 @@ class RAGService:
         Returns:
             关键词列表
         """
-        # 移除标点符号
-        text = re.sub(r'[^\w\s]', ' ', text)
-        # 分词（简单按空格分割）
-        words = text.lower().split()
+        # 保留中文字符、英文字母和空格，移除其他标点符号
+        text = re.sub(r'[^\w\u4e00-\u9fff\s]', ' ', text)
+        # 提取中文词和英文单词
+        words = re.findall(r'[\u4e00-\u9fff]+|[a-zA-Z]+', text.lower())
         # 过滤停用词和短词
         stop_words = {'的', '了', '在', '是', '我', '有', '和', '就', '不', '人', '都', '一', '一个', '上', '也', '很', '到', '说', '要', '去', '你', '会', '着', '没有', '看', '好', '自己', '这'}
         keywords = [w for w in words if len(w) > 1 and w not in stop_words]
@@ -43,7 +46,7 @@ class RAGService:
     
     def _select_cv_snippets(self, cv_text: str, question: str) -> List[str]:
         """
-        从CV中提取相关片段（基于关键词匹配）
+        从CV中提取相关片段（基于关键词匹配，优先匹配项目/实习相关内容）
         
         Args:
             cv_text: CV文本
@@ -52,15 +55,33 @@ class RAGService:
         Returns:
             相关片段列表
         """
-        if not cv_text or not question:
-            return []
-        
-        keywords = self._extract_keywords(question)
-        if not keywords:
+        if not cv_text or not cv_text.strip():
+            logger.warning("CV文本为空，无法提取片段")
             return []
         
         # 按段落分割CV
         paragraphs = [p.strip() for p in cv_text.split('\n') if p.strip()]
+        
+        if not question or not question.strip():
+            # 如果问题为空，优先返回项目/实习段，否则返回前5段
+            project_blocks = [p for p in paragraphs if any(k in p.lower() for k in PROJECT_HINTS)]
+            return project_blocks[:5] if project_blocks else paragraphs[:5]
+        
+        q_lower = question.lower()
+        
+        # 优先：问题中提到项目/实习
+        if any(k in q_lower for k in PROJECT_HINTS):
+            project_blocks = [p for p in paragraphs if any(k in p.lower() for k in PROJECT_HINTS)]
+            if project_blocks:
+                logger.info(f"项目类问题命中，返回 {len(project_blocks[:5])} 段项目内容")
+                return project_blocks[:5]
+        
+        # 否则：常规关键词匹配
+        keywords = self._extract_keywords(question)
+        if not keywords:
+            # 如果没有关键词，优先返回项目/实习段，否则前5段
+            project_blocks = [p for p in paragraphs if any(k in p.lower() for k in PROJECT_HINTS)]
+            return project_blocks[:5] if project_blocks else paragraphs[:5]
         
         # 计算每个段落的相关度（关键词匹配数）
         scored_paragraphs = []
@@ -72,7 +93,15 @@ class RAGService:
         
         # 按分数排序，返回前3个
         scored_paragraphs.sort(reverse=True, key=lambda x: x[0])
-        return [para for _, para in scored_paragraphs[:3]]
+        result = [para for _, para in scored_paragraphs[:3]]
+        
+        # fallback：优先返回项目/实习，否则前5段
+        if not result:
+            project_blocks = [p for p in paragraphs if any(k in p.lower() for k in PROJECT_HINTS)]
+            result = project_blocks[:5] if project_blocks else paragraphs[:5]
+            logger.info("关键词匹配失败，使用项目/实习或前5段fallback")
+        
+        return result
     
     def _select_jd_snippets(self, jd_text: str, question: str) -> List[str]:
         """
@@ -109,7 +138,7 @@ class RAGService:
     
     def _estimate_tokens(self, text: str) -> int:
         """
-        估算文本的token数量（简单实现：中文字符数 + 英文单词数）
+        估算文本的token数量（优化版：对小段落简化估算）
         
         Args:
             text: 文本
@@ -117,12 +146,32 @@ class RAGService:
         Returns:
             估算的token数
         """
+        # 对于小段落，直接使用长度估算（更快）
+        if len(text) < 200:
+            return len(text) // 2
+        
+        # 对于长段落，使用更精确的估算
         # 中文字符数
         chinese_chars = len(re.findall(r'[\u4e00-\u9fff]', text))
         # 英文单词数
         english_words = len(re.findall(r'\b[a-zA-Z]+\b', text))
         # 简单估算：中文字符 * 1.5 + 英文单词
         return int(chinese_chars * 1.5 + english_words)
+    
+    def _trim_chunk(self, chunk: str, max_chars: int = 1000) -> str:
+        """
+        裁剪单个chunk的最大字符数（防止超长文档）
+        
+        Args:
+            chunk: 文本片段
+            max_chars: 最大字符数
+        
+        Returns:
+            裁剪后的文本
+        """
+        if len(chunk) > max_chars:
+            return chunk[:max_chars] + "..."
+        return chunk
     
     def _trim_to_budget(
         self,
@@ -147,6 +196,8 @@ class RAGService:
         # 优先保留CV
         trimmed_cv = []
         for chunk in cv_chunks:
+            # 先裁剪超长chunk
+            chunk = self._trim_chunk(chunk)
             tokens = self._estimate_tokens(chunk)
             if used + tokens <= budget:
                 trimmed_cv.append(chunk)
@@ -162,6 +213,7 @@ class RAGService:
         # 然后保留JD
         trimmed_jd = []
         for chunk in jd_chunks:
+            chunk = self._trim_chunk(chunk)
             tokens = self._estimate_tokens(chunk)
             if used + tokens <= budget:
                 trimmed_jd.append(chunk)
@@ -175,16 +227,28 @@ class RAGService:
         # 最后保留外部文档
         trimmed_ext = []
         for chunk in ext_chunks:
-            tokens = self._estimate_tokens(chunk.content)
+            # 先裁剪超长chunk
+            trimmed_content = self._trim_chunk(chunk.content)
+            tokens = self._estimate_tokens(trimmed_content)
             if used + tokens <= budget:
-                trimmed_ext.append(chunk)
+                # 如果内容被裁剪，创建新的chunk
+                if trimmed_content != chunk.content:
+                    trimmed_chunk = DocChunk(
+                        content=trimmed_content,
+                        source=chunk.source,
+                        metadata=chunk.metadata,
+                        score=chunk.score
+                    )
+                    trimmed_ext.append(trimmed_chunk)
+                else:
+                    trimmed_ext.append(chunk)
                 used += tokens
             else:
                 remaining = budget - used
                 if remaining > 50:
                     # 创建截断的chunk
                     trimmed_chunk = DocChunk(
-                        content=chunk.content[:remaining * 2],
+                        content=trimmed_content[:remaining * 2],
                         source=chunk.source,
                         metadata=chunk.metadata,
                         score=chunk.score
@@ -224,13 +288,15 @@ class RAGService:
         # 外部知识库向量检索
         ext_chunks = []
         try:
-            query_emb = await embedding_service.embed(question)
-            if query_emb is not None:
-                ext_chunks = await doc_store.search_by_embedding(
-                    query_emb,
-                    top_k=self.top_k,
-                    session_id=session_id
-                )
+            # 检查 embedding_service 和 doc_store 是否可用
+            if embedding_service is not None and hasattr(doc_store, 'search_by_embedding'):
+                query_emb = await embedding_service.embed(question)
+                if query_emb is not None:
+                    ext_chunks = await doc_store.search_by_embedding(
+                        query_emb,
+                        top_k=self.top_k,
+                        session_id=session_id
+                    )
         except Exception as e:
             logger.warning(f"外部知识库检索失败: {e}")
         

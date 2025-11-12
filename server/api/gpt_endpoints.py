@@ -87,9 +87,15 @@ async def gpt_endpoint_post(
             cv_info = await cv_dao.get_default_cv()
             if cv_info:
                 cv_text = cv_info.get("content", "")
-                state.cv_text = cv_text
+                if cv_text:
+                    state.cv_text = cv_text
+                    logger.info(f"从数据库加载CV，长度: {len(cv_text)}")
+                else:
+                    logger.warning("数据库中的CV内容为空")
+            else:
+                logger.warning("数据库中未找到CV")
         except Exception as e:
-            logger.warning(f"获取CV失败: {e}")
+            logger.error(f"获取CV失败: {e}", exc_info=True)
     
     if not jd_text:
         try:

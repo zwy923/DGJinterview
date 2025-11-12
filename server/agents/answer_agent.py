@@ -64,6 +64,7 @@ class AnswerAgent:
         cv_section = ""
         if rag_bundle.cv_chunks:
             cv_section = "\n".join(rag_bundle.cv_chunks)
+        logger.info(f"CV部分: {cv_section}")
         
         # 构建JD部分
         jd_section = ""
@@ -119,7 +120,6 @@ class AnswerAgent:
 {dialogue_text if dialogue_text else "（无）"}
 
 请基于以上内容，生成一个详细、结构化的回答建议。回答要：
-- 自然、自信，以第一人称表述
 - 结合简历中的相关经验
 - 与岗位要求对齐
 - 长度控制在6-12句话
@@ -152,12 +152,14 @@ class AnswerAgent:
         try:
             # 1. RAG检索
             logger.info(f"开始RAG检索，问题: {question[:50]}...")
+            logger.info(f"CV文本长度: {len(self.cv_text) if self.cv_text else 0}, JD文本长度: {len(self.jd_text) if self.jd_text else 0}")
             rag_bundle = await rag_service.query(
                 question=question,
-                cv_text=self.cv_text,
-                jd_text=self.jd_text,
+                cv_text=self.cv_text or "",
+                jd_text=self.jd_text or "",
                 session_id=self.state.sid
             )
+            logger.info(f"RAG检索完成: CV片段数={len(rag_bundle.cv_chunks)}, JD片段数={len(rag_bundle.jd_chunks)}, 外部片段数={len(rag_bundle.ext_chunks)}")
             
             # 2. 构建Prompt
             prompt = self._build_prompt(question, rag_bundle, mode)
