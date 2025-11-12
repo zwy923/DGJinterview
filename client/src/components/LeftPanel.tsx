@@ -254,15 +254,21 @@ export default function LeftPanel({
   }, [sessionId]);
 
   return (
-    <div className="left-panel-content">
-      <h2>💬 面试对话记录</h2>
+    <div className="left-panel-content" style={{ 
+      display: 'flex', 
+      flexDirection: 'column', 
+      height: '100%',
+      overflow: 'hidden'
+    }}>
+      <h2 style={{ flexShrink: 0 }}>💬 面试对话记录</h2>
       
       {/* 回答按钮 */}
       <div style={{ 
         marginBottom: '1rem',
         display: 'flex',
         gap: '0.5rem',
-        alignItems: 'center'
+        alignItems: 'center',
+        flexShrink: 0
       }}>
         <button
           onClick={handleAnswer}
@@ -302,8 +308,8 @@ export default function LeftPanel({
       </div>
       
       {/* 聊天记录显示区域 */}
-      <div className="chat-container">
-        <div className="chat-messages" ref={chatMessagesRef}>
+      <div className="chat-container" style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+        <div className="chat-messages" ref={chatMessagesRef} style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden' }}>
           {isLoadingHistory ? (
             <div className="empty-chat">
               <div className="empty-icon">⏳</div>
@@ -384,7 +390,8 @@ export default function LeftPanel({
         padding: '1rem',
         background: 'rgba(0, 0, 0, 0.2)',
         borderRadius: '0.75rem',
-        border: '1px solid rgba(255, 255, 255, 0.1)'
+        border: '1px solid rgba(255, 255, 255, 0.1)',
+        flexShrink: 0
       }}>
         <div style={{ 
           fontSize: '0.875rem', 
@@ -446,11 +453,13 @@ export default function LeftPanel({
         </div>
       </div>
       
-      <AudioController 
-        onUserText={onUserText} 
-        onInterviewerText={onInterviewerText}
-        sessionId={sessionId}
-      />
+      <div style={{ flexShrink: 0 }}>
+        <AudioController 
+          onUserText={onUserText} 
+          onInterviewerText={onInterviewerText}
+          sessionId={sessionId}
+        />
+      </div>
     </div>
   );
 }
