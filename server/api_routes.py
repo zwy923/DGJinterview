@@ -94,7 +94,7 @@ async def ask_gpt(request: GPTRequest):
                 logger.warning(f"RAG检索失败: {e}")
         
         # 5. 构建增强的prompt
-        enhanced_prompt_parts.append("你是一位专业的面试助手。请根据以下信息为面试者提供回答建议和技巧。")
+        enhanced_prompt_parts.append("你是一位专业的面试助手，专门为面试者提供回答建议和技巧。请根据以下信息为面试者提供帮助。")
         enhanced_prompt_parts.append("")
         
         # 添加CV信息
@@ -422,7 +422,7 @@ async def get_knowledge_base_api(session_id: str):
 
 @router.post("/agent/suggest", response_model=AgentSuggestResponse)
 async def agent_suggest_api(request: AgentSuggestRequest):
-    """Agent生成面试建议（异步，轻量化）"""
+    """Agent为面试者生成回答建议（异步，轻量化）"""
     try:
         # 获取会话状态
         session_key = f"{request.session_id}_mic"  # 默认使用mic会话
@@ -440,11 +440,17 @@ async def agent_suggest_api(request: AgentSuggestRequest):
                 message="会话未找到，请先开始录音"
             )
         
-        # 调用Agent生成建议
-        suggestion = await interview_agent.suggest_question(
+        # 从请求中获取问题（如果有）
+        question = None
+        if hasattr(request, 'question') and request.question:
+            question = request.question
+        
+        # 调用Agent生成回答建议
+        suggestion = await interview_agent.suggest_answer(
             session_state=session_state,
             session_id=request.session_id,
-            user_id=request.user_id
+            user_id=request.user_id,
+            question=question
         )
         
         if suggestion:

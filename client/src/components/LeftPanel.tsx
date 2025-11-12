@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import AudioController from "./AudioController";
-import { getChatHistory, getAgentSuggestion, type ChatMessage as ApiChatMessage } from "../api/apiClient";
+import { getChatHistory, type ChatMessage as ApiChatMessage } from "../api/apiClient";
 
 interface ChatMessage {
   id: string;
@@ -33,7 +33,7 @@ export default function LeftPanel({
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const chatMessagesRef = useRef<HTMLDivElement>(null);
   const shouldAutoScrollRef = useRef(true);
-  const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const scrollTimeoutRef = useRef<number | null>(null);
 
   // 向agent提问
   const handleAskAgent = async () => {
@@ -44,9 +44,9 @@ export default function LeftPanel({
     setIsAskingAgent(true);
     
     try {
-      // 使用askGPT API，让agent以面试官身份回答问题
+      // 使用askGPT API，为面试者提供建议
       const { askGPT } = await import("../api/apiClient");
-      const prompt = `你是一位专业的面试官助手。请回答以下问题：${userQuestion}\n\n请基于当前面试上下文、岗位信息和候选人简历来回答。回答应该专业、简洁、有助于面试进行。`;
+      const prompt = `你是一位专业的面试助手，专门为面试者提供帮助。请回答以下问题：${userQuestion}\n\n请基于当前面试上下文、岗位信息和候选人简历来回答。回答应该专业、实用，帮助面试者更好地准备和应对面试。`;
       
       const reply = await askGPT(prompt, {
         sessionId: sessionId,
@@ -198,7 +198,7 @@ export default function LeftPanel({
             </div>
           ) : (
             <>
-              {chatHistory.map((message, index) => {
+              {chatHistory.map((message) => {
                 // 检查是否为部分结果（通过检查是否有 partial 属性或通过消息类型）
                 const isPartial = (message as any).isPartial || false;
                 
