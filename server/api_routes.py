@@ -80,17 +80,21 @@ async def ask_gpt(request: GPTRequest):
                     session_key = f"{request.session_id}_sys"
                     session_state = _sessions.get(session_key) if _sessions else None
                 
-                # 严格检查session_state
+                # 严格检查session_state，使用SessionMemoryRetriever
                 if session_state and hasattr(session_state, "get_history_with_embeddings"):
                     try:
-                        # 从内存对话历史检索
-                        memory_results = await rag_retriever.retrieve_from_memory(
-                            session_state,
-                            request.prompt,
-                            top_k=2
-                        )
-                        if memory_results:
-                            rag_context.extend(memory_results)
+                        from nlp.langchain_components import SessionMemoryRetriever
+                        # 从内存对话历史检索（使用LangChain Retriever）
+                        memory_retriever = SessionMemoryRetriever(session_state, top_k=2)
+                        memory_docs = await memory_retriever.aget_relevant_documents(request.prompt)
+                        # 转换为原有格式
+                        for doc in memory_docs:
+                            rag_context.append({
+                                'content': doc.page_content,
+                                'speaker': doc.metadata.get('speaker', 'unknown'),
+                                'similarity': doc.metadata.get('similarity', 0.0),
+                                'source': 'memory'
+                            })
                     except Exception as e:
                         logger.warning(f"RAG内存检索失败: {e}")
                 else:
@@ -513,6 +517,7 @@ async def agent_suggest_api(request: AgentSuggestRequest):
         # 延迟导入，避免循环导入
         from gateway.ws_audio import _sessions
         from nlp.agent import interview_agent
+        from nlp.exceptions import AgentError
         
         # 获取会话状态
         session_key = f"{request.session_id}_mic"  # 默认使用mic会话
@@ -536,24 +541,13 @@ async def agent_suggest_api(request: AgentSuggestRequest):
         if hasattr(request, 'question') and request.question:
             question = request.question
         
-        # 调用Agent生成回答建议，带超时控制
-        try:
-            suggestion = await asyncio.wait_for(
-                interview_agent.suggest_answer(
-                    session_state=session_state,
-                    session_id=request.session_id,
-                    user_id=request.user_id,
-                    question=question
-                ),
-                timeout=interview_agent.timeout
-            )
-        except asyncio.TimeoutError:
-            logger.warning(f"Agent生成建议超时（{interview_agent.timeout}s）")
-            return AgentSuggestResponse(
-                suggestion=None,
-                success=False,
-                message="生成建议超时，请稍后重试"
-            )
+        # 调用Agent生成回答建议（Agent内部已处理超时）
+        suggestion = await interview_agent.suggest_answer(
+            session_state=session_state,
+            session_id=request.session_id,
+            user_id=request.user_id,
+            question=question
+        )
         
         if suggestion:
             return AgentSuggestResponse(
@@ -567,6 +561,13 @@ async def agent_suggest_api(request: AgentSuggestRequest):
                 success=False,
                 message="生成建议失败"
             )
+    except AgentError as e:
+        logger.error(f"Agent生成建议失败: {e.message}")
+        return AgentSuggestResponse(
+            suggestion=None,
+            success=False,
+            message=f"生成建议失败: {e.message}"
+        )
     except ValueError as e:
         logger.error(f"Agent生成建议参数错误: {e}")
         return AgentSuggestResponse(
@@ -575,7 +576,7 @@ async def agent_suggest_api(request: AgentSuggestRequest):
             message=f"参数错误: {str(e)}"
         )
     except Exception as e:
-        logger.exception("Agent生成建议失败")
+        logger.exception("Agent生成建议未知错误")
         return AgentSuggestResponse(
             suggestion=None,
             success=False,
