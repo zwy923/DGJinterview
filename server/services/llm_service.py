@@ -24,8 +24,47 @@ class LLMService:
         self.model_brief = agent_settings.MODEL_NAME_BRIEF
         self.model_full = agent_settings.MODEL_NAME_FULL
         
+        # 模型参数兼容性：某些新模型使用 max_completion_tokens 而不是 max_tokens
+        # 检测模型名称，判断应该使用哪个参数
+        self._use_max_completion_tokens = self._should_use_max_completion_tokens()
+        
         if not self.api_key:
             logger.warning("LLM_API_KEY未设置，LLM功能将不可用")
+    
+    def _should_use_max_completion_tokens(self) -> bool:
+        """
+        判断是否应该使用 max_completion_tokens 而不是 max_tokens
+        
+        某些新模型（如 gpt-4o-mini 的新版本）需要使用 max_completion_tokens
+        """
+        # 检查模型名称，如果包含特定标识，使用 max_completion_tokens
+        models_using_completion_tokens = [
+            "gpt-4o", "gpt-4o-mini", "o1", "o3"
+        ]
+        
+        model_brief = self.model_brief.lower()
+        model_full = self.model_full.lower()
+        
+        for model_pattern in models_using_completion_tokens:
+            if model_pattern in model_brief or model_pattern in model_full:
+                return True
+        
+        return False
+    
+    def _should_use_max_completion_tokens_for_model(self, model_name: str) -> bool:
+        """
+        针对特定模型判断是否应该使用 max_completion_tokens
+        """
+        model_lower = model_name.lower()
+        models_using_completion_tokens = [
+            "gpt-4o", "gpt-4o-mini", "o1", "o3", "gpt5"
+        ]
+        
+        for model_pattern in models_using_completion_tokens:
+            if model_pattern in model_lower:
+                return True
+        
+        return False
     
     async def stream_generate(
         self,
@@ -48,6 +87,9 @@ class LLMService:
         
         model = self.model_brief if mode == "brief" else self.model_full
         
+        # 根据模型类型选择正确的参数名
+        use_completion_tokens = self._should_use_max_completion_tokens_for_model(model)
+        
         try:
             async with aiohttp.ClientSession() as session:
                 url = f"{self.base_url.rstrip('/')}/chat/completions"
@@ -61,12 +103,43 @@ class LLMService:
                         {"role": "user", "content": prompt}
                     ],
                     "temperature": self.temperature,
-                    "max_tokens": self.max_tokens,
                     "stream": True
                 }
                 
+                # 根据模型类型添加正确的参数
+                if use_completion_tokens:
+                    payload["max_completion_tokens"] = self.max_tokens
+                else:
+                    payload["max_tokens"] = self.max_tokens
+                
                 async with session.post(url, headers=headers, json=payload) as resp:
-                    if resp.status != 200:
+                    # 如果使用 max_tokens 失败，尝试使用 max_completion_tokens
+                    if resp.status == 400:
+                        error_text = await resp.text()
+                        try:
+                            error_data = json.loads(error_text)
+                            error_msg = error_data.get("error", {}).get("message", "")
+                            if "max_tokens" in error_msg and "max_completion_tokens" in error_msg:
+                                # 需要切换到 max_completion_tokens
+                                logger.info(f"模型 {model} 需要使用 max_completion_tokens，正在重试...")
+                                payload.pop("max_tokens", None)
+                                payload["max_completion_tokens"] = self.max_tokens
+                                
+                                # 重新发送请求
+                                async with session.post(url, headers=headers, json=payload) as retry_resp:
+                                    if retry_resp.status != 200:
+                                        error_text = await retry_resp.text()
+                                        logger.error(f"LLM API错误（重试后）: {retry_resp.status} - {error_text}")
+                                        return
+                                    # 继续处理成功的响应
+                                    resp = retry_resp
+                            else:
+                                logger.error(f"LLM API错误: {resp.status} - {error_text}")
+                                return
+                        except (json.JSONDecodeError, KeyError):
+                            logger.error(f"LLM API错误: {resp.status} - {error_text}")
+                            return
+                    elif resp.status != 200:
                         error_text = await resp.text()
                         logger.error(f"LLM API错误: {resp.status} - {error_text}")
                         return
