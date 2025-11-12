@@ -1,5 +1,4 @@
 import { useState, useEffect } from "react";
-import { askGPT } from "../api/apiClient";
 
 interface ChatMessage {
   id: string;
@@ -15,9 +14,8 @@ interface Props {
   agentReply?: { question: string; reply: string } | null;
 }
 
-export default function RightPanel({ chatHistory, sessionId = "default", userId, agentReply }: Props) {
-  const [gptReply, setGptReply] = useState("点击「生成建议」按钮，根据当前对话获取智能回答建议...");
-  const [isLoading, setIsLoading] = useState(false);
+export default function RightPanel({ agentReply }: Props) {
+  const [gptReply, setGptReply] = useState("AI助手回答将显示在这里...");
 
   // 当收到agent回答时，更新显示
   useEffect(() => {
@@ -26,53 +24,6 @@ export default function RightPanel({ chatHistory, sessionId = "default", userId,
     }
   }, [agentReply]);
 
-  // 手动生成回答建议（流式）
-  const handleGetSuggestion = async () => {
-    if (chatHistory.length === 0) {
-      setGptReply("暂无对话记录，请先开始面试对话");
-      return;
-    }
-
-    setIsLoading(true);
-    
-    // 保存当前内容，用于追加（不清空）
-    const previousContent = gptReply;
-    const separator = previousContent && previousContent.trim() && !previousContent.endsWith('\n\n') ? '\n\n' : '';
-    
-    try {
-      // 构建上下文，包含最近的对话
-      const recentMessages = chatHistory.slice(-10); // 最近10条消息
-      const context = recentMessages.map(msg => 
-        `${msg.speaker === 'user' ? '我' : '面试官'}: ${msg.content}`
-      ).join('\n');
-      
-      const prompt = `面试对话上下文：\n${context}\n\n请基于以上对话，为面试者提供简要回答。`;
-      
-      // 传递sessionId和userId，启用RAG增强，使用流式响应
-      let newContent = '';
-      const reply = await askGPT(prompt, {
-        sessionId: sessionId,
-        userId: userId,
-        useRag: true,
-        stream: true,
-        onChunk: (chunk: string) => {
-          // 流式更新显示：在之前内容后追加新内容
-          newContent += chunk;
-          setGptReply(previousContent + separator + newContent);
-        }
-      });
-      
-      // 确保最终内容已设置（流式完成后）
-      if (reply) {
-        setGptReply(previousContent + separator + reply);
-      }
-    } catch (error: any) {
-      console.error("GPT请求失败:", error);
-      setGptReply(previousContent + separator + '抱歉，无法获取AI建议，请稍后重试。');
-    } finally {
-      setIsLoading(false);
-    }
-  };
 
   return (
     <div className="right-panel-content">
@@ -94,25 +45,6 @@ export default function RightPanel({ chatHistory, sessionId = "default", userId,
           }}>
             🤖 AI助手回答
           </h3>
-          <button
-            onClick={handleGetSuggestion}
-            disabled={isLoading || chatHistory.length === 0}
-            style={{
-              padding: '0.5rem 1rem',
-              borderRadius: '0.5rem',
-              border: 'none',
-              background: isLoading || chatHistory.length === 0
-                ? 'rgba(107, 114, 128, 0.5)' 
-                : 'linear-gradient(135deg, #10b981, #059669)',
-              color: 'white',
-              cursor: isLoading || chatHistory.length === 0 ? 'not-allowed' : 'pointer',
-              fontSize: '0.875rem',
-              fontWeight: '600',
-              transition: 'all 0.2s ease'
-            }}
-          >
-            {isLoading ? '生成中...' : '生成建议'}
-          </button>
         </div>
         {agentReply && (
           <div style={{
@@ -138,19 +70,7 @@ export default function RightPanel({ chatHistory, sessionId = "default", userId,
           </div>
         )}
         <div className="gpt-content">
-          {isLoading ? (
-            <div style={{ 
-              display: 'flex', 
-              alignItems: 'center', 
-              gap: '0.5rem',
-              color: '#a1a1aa'
-            }}>
-              <div className="loading"></div>
-              正在分析对话，生成建议中...
-            </div>
-          ) : (
-            <div style={{ whiteSpace: 'pre-wrap' }}>{gptReply}</div>
-          )}
+          <div style={{ whiteSpace: 'pre-wrap' }}>{gptReply}</div>
         </div>
       </div>
     </div>

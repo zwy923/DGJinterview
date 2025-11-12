@@ -106,47 +106,17 @@ async def ask_gpt(request: GPTRequest):
                                         'source': 'recent_history'
                                     })
                             logger.info(f"[/gpt] 获取到 {len(recent_dialogue)} 条最近对话历史")
-                        
-                        # 2. 使用向量检索获取与问题最相关的对话（补充上下文）
-                        from nlp.langchain_components import SessionMemoryRetriever
-                        memory_retriever = SessionMemoryRetriever(session_state, top_k=5)
-                        memory_docs = await memory_retriever.aget_relevant_documents(request.prompt)
-                        # 转换为原有格式
-                        for doc in memory_docs:
-                            rag_context.append({
-                                'content': doc.page_content,
-                                'speaker': doc.metadata.get('speaker', 'unknown'),
-                                'similarity': doc.metadata.get('similarity', 0.0),
-                                'source': 'memory_retrieval'
-                            })
-                        logger.info(f"[/gpt] 向量检索到 {len(rag_context)} 条相关对话")
+                        else:
+                            logger.warning("[/gpt] 未获取到最近对话历史")
                     except Exception as e:
-                        logger.warning(f"RAG内存检索失败: {e}")
+                        logger.warning(f"获取最近对话历史失败: {e}")
                 else:
-                    logger.debug("无有效的session_state，跳过对话历史检索")
-                
-                # 从PostgreSQL检索相关对话（如果RAG启用）
-                if rag_retriever.enabled:
-                    try:
-                        query_embedding = await embedding_service.generate_embedding(request.prompt)
-                        if query_embedding is not None:
-                            db_results = await rag_retriever.retrieve(
-                                query=request.prompt,
-                                query_embedding=query_embedding,
-                                session_id=request.session_id,
-                                top_k=3
-                            )
-                            if db_results:
-                                rag_context.extend(db_results)
-                                logger.info(f"[/gpt] 数据库检索到 {len(db_results)} 条相关对话")
-                    except Exception as e:
-                        logger.warning(f"RAG数据库检索失败: {e}")
+                    logger.warning("[/gpt] 无有效的session_state，跳过对话历史检索")
             except Exception as e:
-                logger.warning(f"RAG检索失败: {e}")
-        
+                logger.warning(f"获取对话上下文失败: {e}")
         # 4. 构建增强的prompt
         enhanced_prompt_parts = []
-        enhanced_prompt_parts.append("你是一位专业的面试助手，专门为面试者提供简洁实用的回答建议。")
+        enhanced_prompt_parts.append("你是一位专业的后端开发，专门为面试者提供简洁的回答建议。")
         enhanced_prompt_parts.append("")
         
         # 添加CV信息
@@ -158,8 +128,6 @@ async def ask_gpt(request: GPTRequest):
                 enhanced_prompt_parts.append(cv_content)
                 enhanced_prompt_parts.append("")
                 logger.info(f"[/gpt] 已将CV信息添加到prompt，长度: {len(cv_content)}")
-        else:
-            logger.warning("[/gpt] 未添加CV信息到prompt（cv_info为空或content为空）")
         
         # 添加岗位信息
         if job_info:
@@ -174,41 +142,111 @@ async def ask_gpt(request: GPTRequest):
                     enhanced_prompt_parts.append(f"要求：{req}")
             enhanced_prompt_parts.append("")
         
-        # 添加对话上下文（优先使用最近对话，补充向量检索的相关对话）
-        if recent_dialogue or rag_context:
-            enhanced_prompt_parts.append("【对话上下文】")
+        # 去重机制：维护已使用的对话内容集合，避免重复
+        used_dialogue_content = set()
+        
+        def add_dialogue_block(title: str, dialogue_list: list, max_items: int = None):
+            """添加对话块，自动去重"""
+            if not dialogue_list:
+                return
             
-            # 首先添加最近对话（更全面）
+            items_to_add = []
+            for item in dialogue_list:
+                content = item.get('content', '').strip()
+                if not content:
+                    continue
+                
+                # 标准化内容用于去重（去除前后空格，统一格式）
+                normalized_content = content.strip()
+                
+                # 检查是否已使用
+                if normalized_content in used_dialogue_content:
+                    continue
+                
+                # 添加到已使用集合
+                used_dialogue_content.add(normalized_content)
+                
+                # 添加到待添加列表
+                speaker = item.get('speaker', 'unknown')
+                speaker_name = "面试官" if speaker == "interviewer" else "我"
+                sanitized_content = _sanitize_content(normalized_content, max_length=200)
+                items_to_add.append(f"{speaker_name}：{sanitized_content}")
+            
+            if items_to_add:
+                enhanced_prompt_parts.append(title)
+                # 如果指定了最大数量，只取最后N条
+                if max_items and len(items_to_add) > max_items:
+                    items_to_add = items_to_add[-max_items:]
+                enhanced_prompt_parts.extend(items_to_add)
+                enhanced_prompt_parts.append("")
+        
+        # 如果传入了选中的消息，优先使用选中的消息作为上下文（用于回答功能）
+        if request.selected_messages and request.session_id:
+            try:
+                from gateway.ws_audio import _sessions
+                session_key = f"{request.session_id}_mic"
+                session_state = _sessions.get(session_key) if _sessions else None
+                if not session_state:
+                    session_key = f"{request.session_id}_sys"
+                    session_state = _sessions.get(session_key) if _sessions else None
+                
+                if session_state and hasattr(session_state, "get_history_with_embeddings"):
+                    full_history = session_state.get_history_with_embeddings()
+                    selected_dialogue = []
+                    for msg_id in request.selected_messages:
+                        # 从历史中找到对应的消息
+                        # 前端传递的id可能是timestamp字符串，需要匹配
+                        found = False
+                        for item in full_history:
+                            # 尝试匹配timestamp（前端id通常是timestamp）
+                            item_timestamp = item.get('timestamp', '')
+                            # 比较timestamp字符串（可能格式略有不同）
+                            if item_timestamp:
+                                # 将timestamp转换为可比较的格式
+                                try:
+                                    from datetime import datetime
+                                    item_ts = datetime.fromisoformat(item_timestamp.replace('Z', '+00:00'))
+                                    msg_ts = datetime.fromisoformat(msg_id.replace('Z', '+00:00'))
+                                    if abs((item_ts - msg_ts).total_seconds()) < 1:  # 1秒内的差异认为是同一消息
+                                        found = True
+                                except:
+                                    # 如果解析失败，直接比较字符串
+                                    if str(item_timestamp) == msg_id or item_timestamp.startswith(msg_id) or msg_id.startswith(item_timestamp):
+                                        found = True
+                            
+                            if found:
+                                content = item.get('content', '').strip()
+                                speaker = item.get('speaker', 'unknown')
+                                # 只添加面试官的消息（选中的对话默认是面试官说的话）
+                                if content and speaker == "interviewer":
+                                    selected_dialogue.append({
+                                        'content': content,
+                                        'speaker': speaker
+                                    })
+                                break
+                    
+                    # 使用去重机制添加选中的对话
+                    if selected_dialogue:
+                        add_dialogue_block("【选中的对话】", selected_dialogue)
+            except Exception as e:
+                logger.warning(f"获取选中消息失败: {e}")
+        
+        # 如果没有选中消息，使用最近对话上下文（去重机制会自动处理重复）
+        if not request.selected_messages:
             if recent_dialogue:
-                enhanced_prompt_parts.append("最近对话：")
-                for item in recent_dialogue[-8:]:  # 最多8条最近对话
-                    content = item.get('content', '')
-                    if content:
-                        content = _sanitize_content(content, max_length=200)
-                        speaker = item.get('speaker', 'unknown')
-                        speaker_name = "面试官" if speaker == "interviewer" else "我"
-                        enhanced_prompt_parts.append(f"{speaker_name}：{content}")
-                enhanced_prompt_parts.append("")
-            
-            # 然后添加向量检索的相关对话（补充）
-            if rag_context:
-                enhanced_prompt_parts.append("相关对话（与问题最相关）：")
-                for item in rag_context[:3]:  # 最多3条最相关的
-                    content = item.get('content', '')
-                    if content:
-                        content = _sanitize_content(content, max_length=150)
-                        speaker = item.get('speaker', 'unknown')
-                        speaker_name = "面试官" if speaker == "interviewer" else "我"
-                        similarity = item.get('similarity', 0.0)
-                        enhanced_prompt_parts.append(f"{speaker_name}：{content}")
-                enhanced_prompt_parts.append("")
+                add_dialogue_block("【对话上下文】\n最近对话：", recent_dialogue[-8:], max_items=8)
         
         # 添加用户的问题/请求
         user_prompt = _sanitize_content(request.prompt)
         enhanced_prompt_parts.append("【问题】")
         enhanced_prompt_parts.append(user_prompt)
         enhanced_prompt_parts.append("")
-        enhanced_prompt_parts.append("请基于以上简历、岗位信息和对话上下文，用一句话简洁回答。")
+        
+        # 根据brief参数决定是快答还是正常回答
+        if request.brief:
+            enhanced_prompt_parts.append("请基于以上简历、岗位信息和对话上下文，用一句话简洁回答。")
+        else:
+            enhanced_prompt_parts.append("请基于以上简历、岗位信息和对话上下文，为面试者提供专业、详细的回答建议。")
         
         enhanced_prompt = "\n".join(enhanced_prompt_parts)
         

@@ -45,6 +45,8 @@ class GPTRequest(BaseModel):
     session_id: Optional[str] = Field(None, description="会话ID（用于获取岗位信息、知识库、对话历史）")
     user_id: Optional[str] = Field(None, description="用户ID（用于获取CV）")
     use_rag: bool = Field(True, description="是否使用RAG检索增强上下文")
+    brief: bool = Field(True, description="是否快答（一句话回答）")
+    selected_messages: Optional[List[str]] = Field(None, description="选中的消息ID列表（用于回答功能）")
 
 
 class GPTResponse(BaseModel):

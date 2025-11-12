@@ -302,6 +302,8 @@ export async function askGPT(
     sessionId?: string;
     userId?: string;
     useRag?: boolean;
+    brief?: boolean;
+    selectedMessages?: string[];
     onChunk?: (chunk: string) => void;
   }
 ): Promise<string> {
@@ -321,6 +323,8 @@ export async function askGPT(
         session_id: options?.sessionId,
         user_id: options?.userId,
         use_rag: options?.useRag !== false,
+        brief: options?.brief !== false, // 默认快答
+        selected_messages: options?.selectedMessages,
       }),
     });
 
@@ -377,6 +381,8 @@ export async function askGPT(
         session_id: options?.sessionId,
         user_id: options?.userId,
         use_rag: options?.useRag !== false,
+        brief: options?.brief !== false, // 默认快答
+        selected_messages: options?.selectedMessages,
       }),
     });
     return response.reply || '';

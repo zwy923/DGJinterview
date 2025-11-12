@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import AudioController from "./AudioController";
 import { getChatHistory, type ChatMessage as ApiChatMessage } from "../api/apiClient";
+import { askGPT } from "../api/apiClient";
 
 interface ChatMessage {
   id: string;
@@ -30,12 +31,42 @@ export default function LeftPanel({
   const [questionText, setQuestionText] = useState("");
   const [isAskingAgent, setIsAskingAgent] = useState(false);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  const [selectedMessages, setSelectedMessages] = useState<Set<string>>(new Set());
+  const [isAnswering, setIsAnswering] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const chatMessagesRef = useRef<HTMLDivElement>(null);
   const shouldAutoScrollRef = useRef(true);
   const scrollTimeoutRef = useRef<number | null>(null);
 
-  // 向agent提问（流式）
+  // 自动勾选面试官的消息
+  useEffect(() => {
+    const newSelected = new Set(selectedMessages);
+    let hasNewSelection = false;
+    
+    chatHistory.forEach((msg) => {
+      if (msg.speaker === 'interviewer' && !selectedMessages.has(msg.id)) {
+        newSelected.add(msg.id);
+        hasNewSelection = true;
+      }
+    });
+    
+    if (hasNewSelection) {
+      setSelectedMessages(newSelected);
+    }
+  }, [chatHistory]);
+
+  // 切换消息选中状态
+  const toggleMessageSelection = (messageId: string) => {
+    const newSelected = new Set(selectedMessages);
+    if (newSelected.has(messageId)) {
+      newSelected.delete(messageId);
+    } else {
+      newSelected.add(messageId);
+    }
+    setSelectedMessages(newSelected);
+  };
+
+  // 向agent提问（快答）
   const handleAskAgent = async () => {
     if (!questionText.trim() || isAskingAgent) return;
     
@@ -44,21 +75,18 @@ export default function LeftPanel({
     setIsAskingAgent(true);
     
     try {
-      // 使用askGPT API，为面试者提供建议
-      // 注意：后端会自动获取简历、岗位信息和对话上下文
-      const { askGPT } = await import("../api/apiClient");
-      const prompt = userQuestion; // 简化prompt，后端会添加所有上下文信息
+      const prompt = userQuestion;
       
-      // 流式响应：实时更新回答
+      // 流式响应：实时更新回答（快答）
       let fullReply = "";
       
       const reply = await askGPT(prompt, {
         sessionId: sessionId,
         userId: userId,
         useRag: true,
+        brief: true, // 快答
         stream: true,
         onChunk: (chunk: string) => {
-          // 流式更新：每次收到新内容块时更新显示
           fullReply += chunk;
           if (onAgentReply) {
             onAgentReply(userQuestion, fullReply);
@@ -66,7 +94,6 @@ export default function LeftPanel({
         }
       });
       
-      // 确保最终内容已设置（流式完成后）
       if (reply && reply.trim()) {
         if (onAgentReply) {
           onAgentReply(userQuestion, reply.trim());
@@ -82,9 +109,68 @@ export default function LeftPanel({
     }
   };
 
+  // 回答功能（正常回答，基于选中的消息）
+  const handleAnswer = async () => {
+    if (selectedMessages.size === 0 || isAnswering) {
+      alert("请先选择要回答的面试官消息");
+      return;
+    }
+    
+    setIsAnswering(true);
+    
+    try {
+      // 构建问题：基于选中的消息
+      const selectedMsgs = chatHistory.filter(msg => selectedMessages.has(msg.id));
+      const interviewerMsgs = selectedMsgs.filter(msg => msg.speaker === 'interviewer');
+      
+      if (interviewerMsgs.length === 0) {
+        alert("选中的消息中没有面试官的问题");
+        setIsAnswering(false);
+        return;
+      }
+      
+      // 使用选中的消息的timestamp作为ID（后端使用timestamp匹配）
+      const selectedTimestamps = interviewerMsgs.map(msg => msg.timestamp);
+      const question = interviewerMsgs.map(msg => msg.content).join('；');
+      
+      const prompt = `请帮我回答以下问题：${question}`;
+      
+      // 流式响应：实时更新回答（正常回答，不是快答）
+      let fullReply = "";
+      
+      const reply = await askGPT(prompt, {
+        sessionId: sessionId,
+        userId: userId,
+        useRag: true,
+        brief: false, // 正常回答，不是快答
+        selectedMessages: selectedTimestamps, // 传递timestamp而不是id
+        stream: true,
+        onChunk: (chunk: string) => {
+          fullReply += chunk;
+          if (onAgentReply) {
+            onAgentReply(question, fullReply);
+          }
+        }
+      });
+      
+      if (reply && reply.trim()) {
+        if (onAgentReply) {
+          onAgentReply(question, reply.trim());
+        }
+      } else if (!fullReply) {
+        alert("未能获取回答，请稍后重试");
+      }
+    } catch (error: any) {
+      console.error("回答失败:", error);
+      alert(`回答失败: ${error.message || "未知错误"}`);
+    } finally {
+      setIsAnswering(false);
+    }
+  };
+
   // 检查是否接近底部
   const isNearBottom = (element: HTMLElement): boolean => {
-    const threshold = 100; // 100px 阈值
+    const threshold = 100;
     const distance = element.scrollHeight - element.scrollTop - element.clientHeight;
     return distance < threshold;
   };
@@ -95,50 +181,41 @@ export default function LeftPanel({
     
     const element = chatMessagesRef.current;
     
-    // 如果用户手动滚动了，检查是否需要自动滚动
     if (!force && !shouldAutoScrollRef.current) {
-      // 如果用户不在底部附近，不自动滚动
       if (!isNearBottom(element)) {
         return;
       }
-      // 如果用户在底部附近，恢复自动滚动
       shouldAutoScrollRef.current = true;
     }
     
-    // 使用 requestAnimationFrame 确保在渲染后滚动
     requestAnimationFrame(() => {
       if (chatMessagesRef.current && shouldAutoScrollRef.current) {
-        // 使用 scrollIntoView 更可靠
         if (messagesEndRef.current) {
           messagesEndRef.current.scrollIntoView({ behavior: 'smooth', block: 'end' });
         } else {
-          // 降级方案
           chatMessagesRef.current.scrollTop = chatMessagesRef.current.scrollHeight;
         }
       }
     });
   };
 
-  // 处理滚动事件，检测用户是否手动滚动
+  // 处理滚动事件
   const handleScroll = () => {
     if (!chatMessagesRef.current) return;
     
     const element = chatMessagesRef.current;
     const isAtBottom = isNearBottom(element);
     
-    // 清除之前的超时
     if (scrollTimeoutRef.current) {
       clearTimeout(scrollTimeoutRef.current);
     }
     
-    // 如果用户不在底部，暂停自动滚动
     if (!isAtBottom) {
       shouldAutoScrollRef.current = false;
     } else {
-      // 如果用户滚动回底部，恢复自动滚动
       scrollTimeoutRef.current = setTimeout(() => {
         shouldAutoScrollRef.current = true;
-      }, 500); // 500ms 延迟，避免频繁切换
+      }, 500);
     }
   };
 
@@ -169,7 +246,6 @@ export default function LeftPanel({
       setIsLoadingHistory(true);
       try {
         const history = await getChatHistory(sessionId);
-        // 将后端格式转换为前端格式
         const formattedHistory: ChatMessage[] = history.map((msg: ApiChatMessage) => ({
           id: msg.id?.toString() || Date.now().toString(),
           speaker: msg.speaker as 'user' | 'interviewer' | 'system',
@@ -178,8 +254,6 @@ export default function LeftPanel({
           isPartial: false,
         }));
         
-        // 合并本地和远程消息（避免重复）
-        // 注意：这里只是加载，实际合并逻辑应该在父组件中处理
         console.log('Loaded chat history from backend:', formattedHistory.length, 'messages');
       } catch (error) {
         console.error('Failed to load chat history:', error);
@@ -194,6 +268,50 @@ export default function LeftPanel({
   return (
     <div className="left-panel-content">
       <h2>💬 面试对话记录</h2>
+      
+      {/* 回答按钮 */}
+      <div style={{ 
+        marginBottom: '1rem',
+        display: 'flex',
+        gap: '0.5rem',
+        alignItems: 'center'
+      }}>
+        <button
+          onClick={handleAnswer}
+          disabled={selectedMessages.size === 0 || isAnswering}
+          style={{
+            padding: '0.5rem 1rem',
+            borderRadius: '0.5rem',
+            border: 'none',
+            background: (selectedMessages.size === 0 || isAnswering)
+              ? 'rgba(107, 114, 128, 0.5)' 
+              : 'linear-gradient(135deg, #10b981, #059669)',
+            color: 'white',
+            cursor: (selectedMessages.size === 0 || isAnswering) ? 'not-allowed' : 'pointer',
+            fontSize: '0.875rem',
+            fontWeight: '600',
+            transition: 'all 0.2s ease'
+          }}
+        >
+          {isAnswering ? '回答中...' : `回答 (${selectedMessages.size})`}
+        </button>
+        {selectedMessages.size > 0 && (
+          <button
+            onClick={() => setSelectedMessages(new Set())}
+            style={{
+              padding: '0.5rem 1rem',
+              borderRadius: '0.5rem',
+              border: '1px solid rgba(255, 255, 255, 0.2)',
+              background: 'transparent',
+              color: '#9ca3af',
+              cursor: 'pointer',
+              fontSize: '0.75rem'
+            }}
+          >
+            清空选择
+          </button>
+        )}
+      </div>
       
       {/* 聊天记录显示区域 */}
       <div className="chat-container">
@@ -211,14 +329,44 @@ export default function LeftPanel({
           ) : (
             <>
               {chatHistory.map((message) => {
-                // 检查是否为部分结果（通过检查是否有 partial 属性或通过消息类型）
                 const isPartial = (message as any).isPartial || false;
+                const isSelected = selectedMessages.has(message.id);
+                const isInterviewer = message.speaker === 'interviewer';
                 
                 return (
                   <div 
                     key={message.id} 
                     className={`chat-message ${message.speaker === 'user' ? 'user-message' : 'interviewer-message'} ${isPartial ? 'partial-message' : ''}`}
+                    style={{
+                      position: 'relative',
+                      cursor: isInterviewer ? 'pointer' : 'default',
+                      opacity: isInterviewer && !isSelected ? 0.7 : 1,
+                      border: isSelected ? '2px solid #10b981' : 'none',
+                      borderRadius: isSelected ? '0.5rem' : '0',
+                      padding: isSelected ? '0.25rem' : '0'
+                    }}
+                    onClick={() => isInterviewer && toggleMessageSelection(message.id)}
                   >
+                    {isInterviewer && (
+                      <div style={{
+                        position: 'absolute',
+                        left: '-1.5rem',
+                        top: '0.5rem',
+                        width: '1rem',
+                        height: '1rem',
+                        border: '2px solid #10b981',
+                        borderRadius: '0.25rem',
+                        background: isSelected ? '#10b981' : 'transparent',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        cursor: 'pointer'
+                      }}>
+                        {isSelected && (
+                          <span style={{ color: 'white', fontSize: '0.75rem' }}>✓</span>
+                        )}
+                      </div>
+                    )}
                     <div className="message-bubble">
                       <div className="message-header">
                         <span className="speaker-name">
@@ -263,7 +411,7 @@ export default function LeftPanel({
           color: '#9ca3af', 
           marginBottom: '0.75rem'
         }}>
-          输入问题，AI助手将基于当前面试上下文、岗位信息和简历给出专业回答
+          输入问题，AI助手将基于当前面试上下文、岗位信息和简历给出专业回答（一句话快答）
         </div>
         <div style={{ display: 'flex', gap: '0.5rem' }}>
           <input
