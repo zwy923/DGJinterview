@@ -32,6 +32,9 @@ async def lifespan(app: FastAPI):
             has_embedding_api = bool(embedding_service.api_key)
             has_pgvector = pg_pool.vector_available
             
+            # 调试信息（使用INFO级别，确保能看到）
+            logger.info(f"RAG配置检查: RAG_ENABLED={settings.RAG_ENABLED}, has_embedding_api={has_embedding_api}, has_pgvector={has_pgvector}")
+            
             if settings.RAG_ENABLED:
                 if has_embedding_api and has_pgvector:
                     logger.info("PostgreSQL已初始化，RAG功能可用")
@@ -40,11 +43,7 @@ async def lifespan(app: FastAPI):
                 elif not has_pgvector:
                     logger.warning("RAG已启用但pgvector扩展不可用，RAG功能将不可用")
             else:
-                if has_embedding_api and has_pgvector:
-                    logger.info("PostgreSQL已初始化（RAG未启用，仅用于数据存储）")
-                    logger.info("提示：已检测到Embedding API密钥和pgvector，如需启用RAG功能，请设置 RAG_ENABLED=true")
-                else:
-                    logger.info("PostgreSQL已初始化（RAG未启用，仅用于数据存储）")
+                logger.info("PostgreSQL已初始化（RAG未启用，仅用于数据存储）")
         else:
             logger.warning("PostgreSQL未初始化，以下功能将不可用：")
             logger.warning("  - CV保存/读取")

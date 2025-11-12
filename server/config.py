@@ -2,9 +2,14 @@
 统一配置模块
 """
 import os
+from pathlib import Path
 from typing import Optional
 from pydantic_settings import BaseSettings
-from pydantic import ConfigDict
+from pydantic import ConfigDict, Field
+
+# 获取server目录的绝对路径
+SERVER_DIR = Path(__file__).parent.resolve()
+ENV_FILE_PATH = SERVER_DIR / ".env"
 
 
 class Settings(BaseSettings):
@@ -83,13 +88,7 @@ class Settings(BaseSettings):
     PG_ENABLED: bool = os.getenv("PG_ENABLED", "true").lower() == "true"  # PostgreSQL是否启用（独立于RAG，用于CV、对话记录、岗位信息等存储）
     
     # RAG配置
-    # RAG是否启用：如果显式设置为true/false则使用，否则自动检测（需要PostgreSQL、pgvector和Embedding API）
-    _RAG_ENABLED_EXPLICIT = os.getenv("RAG_ENABLED")
-    if _RAG_ENABLED_EXPLICIT is not None:
-        RAG_ENABLED: bool = _RAG_ENABLED_EXPLICIT.lower() == "true"
-    else:
-        # 自动检测：如果有Embedding API密钥，则默认启用RAG
-        RAG_ENABLED: bool = bool(os.getenv("EMBEDDING_API_KEY") or os.getenv("LLM_API_KEY"))
+    RAG_ENABLED: Optional[bool] = Field(default=None, description="RAG是否启用（从环境变量RAG_ENABLED读取，如果未设置则自动检测）")
     RAG_TOP_K: int = 5
     RAG_RERANK_TOP_K: int = 3
     
@@ -105,11 +104,54 @@ class Settings(BaseSettings):
     
     # Pydantic V2 配置
     model_config = ConfigDict(
-        env_file=".env",
-        case_sensitive=True
+        env_file=str(ENV_FILE_PATH),  # 使用绝对路径，确保能找到.env文件
+        env_file_encoding="utf-8",
+        case_sensitive=True,
+        extra="ignore"
     )
 
 
 # 全局配置实例
 settings = Settings()
+
+# RAG配置（需要在Settings实例化后处理）
+# Pydantic BaseSettings 会自动从.env文件加载环境变量到字段
+# 如果RAG_ENABLED为None（环境变量未设置），则根据Embedding API密钥自动检测
+
+# 调试：检查.env文件是否存在并读取内容
+from logs import setup_logger
+_config_logger = setup_logger("config")
+_config_logger.info(f".env文件路径: {ENV_FILE_PATH}")
+_config_logger.info(f".env文件是否存在: {ENV_FILE_PATH.exists()}")
+
+if ENV_FILE_PATH.exists():
+    try:
+        with open(ENV_FILE_PATH, 'r', encoding='utf-8') as f:
+            env_lines = f.readlines()
+            _config_logger.info(f".env文件行数: {len(env_lines)}")
+            rag_enabled_lines = [line.strip() for line in env_lines if 'RAG_ENABLED' in line.upper()]
+            if rag_enabled_lines:
+                _config_logger.info(f".env文件中的RAG_ENABLED配置: {rag_enabled_lines}")
+            else:
+                _config_logger.warning(f".env文件中未找到RAG_ENABLED配置")
+    except Exception as e:
+        _config_logger.error(f"读取.env文件失败: {e}")
+
+# 再次检查环境变量（Pydantic可能已经加载到os.environ中）
+_RAG_ENABLED_FROM_ENV = os.environ.get("RAG_ENABLED")
+_config_logger.info(f"os.environ中的RAG_ENABLED: {_RAG_ENABLED_FROM_ENV}")
+_config_logger.info(f"settings.RAG_ENABLED (Pydantic加载后): {settings.RAG_ENABLED}")
+
+if _RAG_ENABLED_FROM_ENV is not None:
+    # 如果环境变量存在，使用环境变量的值（优先）
+    settings.RAG_ENABLED = _RAG_ENABLED_FROM_ENV.lower() in ("true", "1", "yes")
+    _config_logger.info(f"从环境变量设置RAG_ENABLED: {_RAG_ENABLED_FROM_ENV} -> {settings.RAG_ENABLED}")
+elif settings.RAG_ENABLED is None:
+    # 如果环境变量未设置且字段为None，则根据Embedding API密钥自动检测
+    settings.RAG_ENABLED = bool(settings.EMBEDDING_API_KEY or settings.LLM_API_KEY)
+    _config_logger.info(f"自动检测RAG_ENABLED: {settings.RAG_ENABLED} (基于Embedding API密钥)")
+else:
+    _config_logger.info(f"RAG_ENABLED已设置: {settings.RAG_ENABLED}")
+
+_config_logger.info(f"最终RAG_ENABLED值: {settings.RAG_ENABLED}")
 
