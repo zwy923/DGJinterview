@@ -91,45 +91,6 @@ class PromptManager:
         return self._schemas.get(name)
 
 
-# 面试分析JSON schema
-INTERVIEW_ANALYSIS_SCHEMA = {
-    "type": "object",
-    "properties": {
-        "score": {
-            "type": "number",
-            "description": "综合评分（0-100）"
-        },
-        "strengths": {
-            "type": "array",
-            "items": {"type": "string"},
-            "description": "优点列表"
-        },
-        "weaknesses": {
-            "type": "array",
-            "items": {"type": "string"},
-            "description": "不足列表"
-        },
-        "recommendations": {
-            "type": "array",
-            "items": {"type": "string"},
-            "description": "改进建议"
-        },
-        "technical_depth": {
-            "type": "string",
-            "enum": ["基础", "中等", "深入"],
-            "description": "技术深度"
-        },
-        "communication_quality": {
-            "type": "string",
-            "enum": ["需要改进", "良好", "优秀"],
-            "description": "沟通质量"
-        }
-    },
-    "required": ["score", "strengths", "weaknesses", "recommendations"]
-}
-
-
 # 全局prompt管理器
 prompt_manager = PromptManager()
-prompt_manager.register_schema("interview_analysis", INTERVIEW_ANALYSIS_SCHEMA)
 

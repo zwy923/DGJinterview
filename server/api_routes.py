@@ -46,32 +46,34 @@ async def ask_gpt(request: GPTRequest):
         from gateway.ws_audio import _sessions
         
         # 并行获取所有数据源
-        tasks = []
+        coros = []
         
         # 1. 获取CV信息（如果有user_id则按user_id获取，否则获取默认CV）
         if request.user_id:
             logger.info(f"[/gpt] 开始获取CV信息，user_id: {request.user_id}")
-            tasks.append(("cv", cv_dao.get_cv_by_user_id(request.user_id)))
+            coros.append(cv_dao.get_cv_by_user_id(request.user_id))
         else:
             logger.info("[/gpt] 未提供user_id，尝试获取默认CV（第一个用户的CV）")
-            tasks.append(("cv", cv_dao.get_default_cv()))
+            coros.append(cv_dao.get_default_cv())
         
         # 2. 获取岗位信息（如果有session_id）
         if request.session_id:
-            tasks.append(("job", job_position_dao.get_job_position_by_session(request.session_id)))
+            coros.append(job_position_dao.get_job_position_by_session(request.session_id))
         
         # 并行执行所有查询
-        results = {}
-        if tasks:
-            task_results = await asyncio.gather(*[task[1] for task in tasks], return_exceptions=True)
-            for (key, _), result in zip(tasks, task_results):
-                if isinstance(result, Exception):
-                    logger.warning(f"获取{key}失败: {result}")
-                else:
-                    results[key] = result
+        results = await asyncio.gather(*coros, return_exceptions=True)
         
-        cv_info = results.get("cv")
-        job_info = results.get("job")
+        # 处理结果：第一个是CV，第二个是Job（如果存在）
+        cv_info, job_info = (results + [None, None])[:2]
+        
+        # 处理异常
+        if isinstance(cv_info, Exception):
+            logger.warning(f"获取CV失败: {cv_info}")
+            cv_info = None
+        
+        if isinstance(job_info, Exception):
+            logger.warning(f"获取岗位信息失败: {job_info}")
+            job_info = None
         
         # 3. 获取对话上下文（如果启用RAG）
         rag_context = []

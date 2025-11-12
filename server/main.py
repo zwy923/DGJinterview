@@ -54,12 +54,28 @@ async def lifespan(app: FastAPI):
                 logger.warning("  - RAG向量检索功能")
             logger.warning("请检查PostgreSQL配置和服务状态")
     
+    # 预热Agent Chain（优化①）
+    try:
+        from nlp.agent import interview_agent
+        await interview_agent.preload()
+        logger.info("✅ Agent Chain预热完成")
+    except Exception as e:
+        logger.warning(f"Agent Chain预热失败: {e}")
+    
     yield
     
     # 关闭时清理
     logger.info("🛑 关闭应用...")
     if pg_pool.pool:  # 如果已初始化，则关闭
         await pg_pool.close()
+    
+    # 关闭 LLM API 连接
+    from nlp.llm_api import llm_api
+    await llm_api.close()
+    
+    # 关闭 Redis 连接
+    from utils.redis_client import close_redis
+    await close_redis()
 
 
 # 创建FastAPI应用

@@ -2,13 +2,13 @@
 LangChain 自定义组件
 封装现有的 LLM API 和检索器
 """
-from typing import List, Optional, Any
+from typing import List, Optional, Any, AsyncIterator
 import numpy as np
 
 from langchain_core.language_models import BaseChatModel
 from langchain_core.callbacks import CallbackManagerForLLMRun
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
-from langchain_core.outputs import ChatGeneration, ChatResult
+from langchain_core.outputs import ChatGeneration, ChatResult, ChatGenerationChunk
 from langchain_core.retrievers import BaseRetriever
 from langchain_core.documents import Document
 
@@ -45,7 +45,7 @@ class CustomLLMWrapper(BaseChatModel):
         run_manager: Optional[CallbackManagerForLLMRun] = None,
         **kwargs: Any,
     ) -> ChatResult:
-        """异步生成"""
+        """异步生成（支持流式，通过回调实时推送token）"""
         try:
             # 将 LangChain 消息转换为 API 格式
             api_messages = []
@@ -55,11 +55,24 @@ class CustomLLMWrapper(BaseChatModel):
                 elif isinstance(msg, AIMessage):
                     api_messages.append({"role": "assistant", "content": msg.content})
             
-            # 调用现有的 LLM API
+            # 使用流式生成，通过回调实时推送token
             content_parts = []
-            async for chunk in llm_api.chat(api_messages, stream=False, **kwargs):
+            async for chunk in llm_api.chat(api_messages, stream=True, **kwargs):
                 if chunk.get("content"):
-                    content_parts.append(chunk["content"])
+                    content = chunk["content"]
+                    content_parts.append(content)
+                    
+                    # 通过 run_manager 实时推送token（如果提供了回调）
+                    if run_manager:
+                        try:
+                            # 创建 AIMessage chunk 并触发回调
+                            from langchain_core.messages import AIMessageChunk
+                            chunk_msg = AIMessageChunk(content=content)
+                            await run_manager.on_llm_new_token(chunk_msg.content)
+                        except Exception as callback_error:
+                            # 回调失败不影响主流程
+                            logger.debug(f"回调推送token失败: {callback_error}")
+                
                 if chunk.get("done"):
                     break
             
@@ -77,6 +90,53 @@ class CustomLLMWrapper(BaseChatModel):
         except Exception as e:
             logger.error(f"LLM生成失败: {e}")
             raise LLMError(f"LLM调用失败: {str(e)}", cause=e)
+    
+    async def _astream(
+        self,
+        messages: List[BaseMessage],
+        stop: Optional[List[str]] = None,
+        run_manager: Optional[CallbackManagerForLLMRun] = None,
+        **kwargs: Any,
+    ) -> AsyncIterator[ChatGenerationChunk]:
+        """异步流式生成（返回 AsyncIterator[ChatGenerationChunk]）"""
+        try:
+            # 将 LangChain 消息转换为 API 格式
+            api_messages = []
+            for msg in messages:
+                if isinstance(msg, HumanMessage):
+                    api_messages.append({"role": "user", "content": msg.content})
+                elif isinstance(msg, AIMessage):
+                    api_messages.append({"role": "assistant", "content": msg.content})
+            
+            # 使用流式生成，实时yield每个token
+            async for chunk in llm_api.chat(api_messages, stream=True, **kwargs):
+                if chunk.get("content"):
+                    content = chunk["content"]
+                    
+                    # 创建 ChatGenerationChunk 并yield
+                    from langchain_core.messages import AIMessageChunk
+                    chunk_msg = AIMessageChunk(content=content)
+                    generation_chunk = ChatGenerationChunk(
+                        message=chunk_msg,
+                        generation_info={}
+                    )
+                    yield generation_chunk
+                    
+                    # 通过 run_manager 触发回调
+                    if run_manager:
+                        try:
+                            await run_manager.on_llm_new_token(chunk_msg.content)
+                        except Exception as callback_error:
+                            logger.debug(f"回调推送token失败: {callback_error}")
+                
+                if chunk.get("done"):
+                    break
+                    
+        except LLMError:
+            raise
+        except Exception as e:
+            logger.error(f"LLM流式生成失败: {e}")
+            raise LLMError(f"LLM流式调用失败: {str(e)}", cause=e)
 
 
 class SessionMemoryRetriever(BaseRetriever):

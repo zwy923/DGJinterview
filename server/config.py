@@ -77,6 +77,7 @@ class Settings(BaseSettings):
     # Agent配置
     AGENT_TIMEOUT: float = float(os.getenv("AGENT_TIMEOUT", "0.2"))  # Agent超时时间（秒）
     MEMORY_HISTORY_MAX_SIZE: int = int(os.getenv("MEMORY_HISTORY_MAX_SIZE", "1000"))  # 内存历史最大条数
+    LLM_CONCURRENCY_LIMIT: int = int(os.getenv("LLM_CONCURRENCY_LIMIT", "5"))  # LLM并发限制
     
     # PostgreSQL配置
     PG_HOST: str = os.getenv("PG_HOST", "localhost")
