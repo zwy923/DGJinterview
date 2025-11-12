@@ -44,11 +44,11 @@ class ASRPipeline:
         self.partial_interval = settings.PARTIAL_INTERVAL
         
         # 音频块处理超时（用于队列等待）
-        self.chunk_timeout = 0.2  # 200ms
+        self.chunk_timeout = 0.15  # 150ms（降低延迟）
         
         # 能量门控（仅做预过滤，真正端点交给 fsmn-vad）
         self.noise_decay = settings.AUDIO_NOISE_DECAY
-        self.energy_threshold_multiplier = 3.5
+        self.energy_threshold_multiplier = 2.8  # 优化阈值，平衡敏感度和准确性
         
         # 状态
         self.in_speech = False
@@ -248,7 +248,7 @@ class ASRPipeline:
                     segment,
                     True  # 重置 cache（新段开始）
                 ),
-                timeout=10.0  # 10秒超时，防止卡死
+                timeout=8.0  # 8秒超时，提高响应速度
             )
         except asyncio.TimeoutError:
             logger.error(f"ASR识别超时 (segment_length={len(segment)}, duration={len(segment)/self.state.sr:.2f}s)")

@@ -42,19 +42,19 @@ class Settings(BaseSettings):
     WS_TIMEOUT: int = 300
     
     # 音频配置
-    AUDIO_CHUNK_SIZE: int = 1600  # 100ms @ 16kHz（降低延迟）
-    AUDIO_NOISE_DECAY: float = 0.995  # 噪声水平衰减系数
+    AUDIO_CHUNK_SIZE: int = 1600  # 100ms @ 16kHz（平衡延迟和稳定性）
+    AUDIO_NOISE_DECAY: float = 0.992  # 噪声水平衰减系数（稍微加快适应，提高准确性）
     
-    # VAD 端点检测配置（三段式）
-    VAD_PRE_SPEECH_PADDING: float = 0.2  # 前置缓冲 200ms
-    VAD_END_SILENCE: float = 0.4  # 尾静音 400ms（交互场景）
-    VAD_MAX_SEGMENT: float = 8.0  # 最大段长 8s（防止长段堆积）
+    # VAD 端点检测配置（三段式）- 优化为准确性和速度平衡
+    VAD_PRE_SPEECH_PADDING: float = 0.15  # 前置缓冲 150ms（减少延迟）
+    VAD_END_SILENCE: float = 0.7  # 尾静音 700ms（平衡响应速度和准确性）
+    VAD_MAX_SEGMENT: float = 10.0  # 最大段长 10s（防止过长导致延迟）
     
     # 流式识别配置
-    PARTIAL_INTERVAL: float = 0.2  # 部分结果产出间隔（秒）
+    PARTIAL_INTERVAL: float = 0.15  # 部分结果产出间隔 150ms（更流畅的实时反馈）
     
     # WebSocket 背压配置
-    WS_AUDIO_QUEUE_MAX_SIZE: int = 128  # 队列上限（约 2-3s 音频）
+    WS_AUDIO_QUEUE_MAX_SIZE: int = 96  # 队列上限（约 1.5-2s 音频，降低延迟）
     WS_AUDIO_QUEUE_DROP_OLDEST: bool = True  # 队列满时丢弃最旧
     
     # LLM配置

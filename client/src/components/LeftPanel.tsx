@@ -37,16 +37,18 @@ export default function LeftPanel({
   // 自动滚动到最新消息
   const scrollToBottom = () => {
     if (chatMessagesRef.current) {
-      chatMessagesRef.current.scrollTop = chatMessagesRef.current.scrollHeight;
+      // 使用 requestAnimationFrame 确保在渲染后滚动
+      requestAnimationFrame(() => {
+        if (chatMessagesRef.current) {
+          chatMessagesRef.current.scrollTop = chatMessagesRef.current.scrollHeight;
+        }
+      });
     }
   };
 
   // 当聊天记录更新时自动滚动
   useEffect(() => {
-    // 使用 setTimeout 确保 DOM 更新后再滚动
-    setTimeout(() => {
-      scrollToBottom();
-    }, 0);
+    scrollToBottom();
   }, [chatHistory]);
 
   return (

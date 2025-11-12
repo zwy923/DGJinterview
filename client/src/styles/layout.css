@@ -186,25 +186,33 @@ body {
 .main-content {
   display: flex;
   flex: 1;
+  min-height: 0;
   position: relative;
   z-index: 5;
+  overflow: hidden;
 }
 
 .left-panel {
   flex: 3;
   padding: 2rem;
-  overflow-y: auto;
+  overflow: hidden;
   transition: all var(--transition-normal);
   border-right: 1px solid var(--border-color);
   background: linear-gradient(180deg, rgba(0, 0, 0, 0.2) 0%, rgba(10, 10, 10, 0.4) 100%);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
 }
 
 .right-panel {
   flex: 7;
   padding: 2rem;
-  overflow-y: auto;
+  overflow: hidden;
   transition: all var(--transition-normal);
   background: linear-gradient(180deg, rgba(0, 0, 0, 0.2) 0%, rgba(10, 10, 10, 0.4) 100%);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
 }
 
 /* 桌面端样式 */
@@ -486,6 +494,7 @@ h2 {
   display: flex;
   align-items: center;
   gap: 0.75rem;
+  flex-shrink: 0;
 }
 
 h2::before {
@@ -524,9 +533,11 @@ h2::before {
 
 /* 确保内容区域正确填充 */
 .left-panel-content, .right-panel-content {
-  height: 100%;
+  flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
 /* 优化文本框的flex布局 */
@@ -613,12 +624,15 @@ h2::before {
 .chat-messages {
   flex: 1;
   min-height: 0;
+  max-height: 100%;
   overflow-y: auto;
+  overflow-x: hidden;
   padding: 1rem;
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
   scroll-behavior: smooth;
+  -webkit-overflow-scrolling: touch;
 }
 
 .empty-chat {
@@ -626,9 +640,10 @@ h2::before {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  height: 200px;
+  min-height: 200px;
   color: #a1a1aa;
   text-align: center;
+  flex: 1;
 }
 
 .empty-icon {
@@ -711,20 +726,20 @@ h2::before {
 }
 
 /* 滚动条样式 */
-.chat-container::-webkit-scrollbar {
+.chat-messages::-webkit-scrollbar {
   width: 6px;
 }
 
-.chat-container::-webkit-scrollbar-track {
+.chat-messages::-webkit-scrollbar-track {
   background: rgba(255, 255, 255, 0.1);
   border-radius: 3px;
 }
 
-.chat-container::-webkit-scrollbar-thumb {
+.chat-messages::-webkit-scrollbar-thumb {
   background: rgba(255, 255, 255, 0.3);
   border-radius: 3px;
 }
 
-.chat-container::-webkit-scrollbar-thumb:hover {
+.chat-messages::-webkit-scrollbar-thumb:hover {
   background: rgba(255, 255, 255, 0.5);
 }
