@@ -151,8 +151,8 @@ export default function InterviewPage() {
         <div className="interview-info">
           <h1>{session.config.position}</h1>
           <div className="interview-meta">
-            <span className="status-badge status-active">
-              {session.status === 'active' ? '进行中' : 
+            <span className={`status-badge status-${session.status}`}>
+              {session.status === 'active' ? '进行中' :
                session.status === 'paused' ? '已暂停' : '已结束'}
             </span>
             <span className="duration">
@@ -162,6 +162,24 @@ export default function InterviewPage() {
         </div>
         
         <div className="interview-actions">
+          {session.status !== 'completed' && (
+            session.status === 'active' ? (
+              <button onClick={pauseInterview} className="action-btn pause-btn">
+                暂停面试
+              </button>
+            ) : (
+              <button onClick={resumeInterview} className="action-btn resume-btn">
+                恢复面试
+              </button>
+            )
+          )}
+          <button
+            onClick={analyzeInterview}
+            className="action-btn analyze-btn"
+            disabled={isLoading}
+          >
+            {isLoading ? '分析中...' : '分析面试'}
+          </button>
           <button onClick={endInterview} className="action-btn end-btn">
             结束面试
           </button>

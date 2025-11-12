@@ -11,22 +11,20 @@ interface ChatMessage {
 
 interface Props {
   chatHistory: ChatMessage[];
-  onUserText: (text: string) => void;
-  onInterviewerText: (text: string) => void;
+  onUserText: (text: string, isPartial?: boolean) => void;
+  onInterviewerText: (text: string, isPartial?: boolean) => void;
   sessionId?: string;
 }
 
-export default function LeftPanel({ 
-  chatHistory, 
-  onUserText, 
+export default function LeftPanel({
+  chatHistory,
+  onUserText,
   onInterviewerText,
   sessionId = "default"
 }: Props) {
   const [manualText, setManualText] = useState("");
-  const messagesEndRef = useRef<HTMLDivElement>(null);
   const chatMessagesRef = useRef<HTMLDivElement>(null);
 
-  // 手动输入面试官的话
   const handleManualInput = () => {
     if (manualText.trim()) {
       onInterviewerText(manualText.trim());
@@ -34,129 +32,109 @@ export default function LeftPanel({
     }
   };
 
-  // 自动滚动到最新消息
-  const scrollToBottom = () => {
-    if (chatMessagesRef.current) {
-      // 使用 requestAnimationFrame 确保在渲染后滚动
-      requestAnimationFrame(() => {
-        if (chatMessagesRef.current) {
-          chatMessagesRef.current.scrollTop = chatMessagesRef.current.scrollHeight;
-        }
-      });
-    }
-  };
-
-  // 当聊天记录更新时自动滚动
   useEffect(() => {
-    scrollToBottom();
+    if (!chatMessagesRef.current) return;
+
+    const lastMessage = chatHistory[chatHistory.length - 1];
+
+    requestAnimationFrame(() => {
+      if (!chatMessagesRef.current) return;
+      chatMessagesRef.current.scrollTo({
+        top: chatMessagesRef.current.scrollHeight,
+        behavior: lastMessage?.isPartial ? 'auto' : 'smooth'
+      });
+    });
   }, [chatHistory]);
 
   return (
-    <div className="left-panel-content">
-      <h2>💬 面试对话记录</h2>
-      
-      {/* 聊天记录显示区域 */}
-      <div className="chat-container">
-        <div className="chat-messages" ref={chatMessagesRef}>
+    <div className="flex h-full min-h-[32rem] flex-1 flex-col gap-6 md:max-h-[calc(100vh-220px)]">
+      <div className="flex items-center justify-between">
+        <h2 className="text-xl font-semibold text-white">💬 面试对话记录</h2>
+      </div>
+
+      <div className="relative flex flex-1 flex-col overflow-hidden rounded-2xl border border-slate-800 bg-slate-900/70 shadow-xl">
+        <div
+          ref={chatMessagesRef}
+          className="custom-scrollbar flex flex-1 flex-col gap-4 overflow-y-auto px-5 py-6 md:min-h-[24rem]"
+        >
           {chatHistory.length === 0 ? (
-            <div className="empty-chat">
-              <div className="empty-icon">💭</div>
-              <p>开始语音识别，对话记录将显示在这里</p>
+            <div className="flex h-full flex-col items-center justify-center gap-3 text-center text-slate-400">
+              <div className="text-4xl">💭</div>
+              <p className="text-sm">开始语音识别，对话记录将显示在这里</p>
             </div>
           ) : (
             <>
-              {chatHistory.map((message, index) => {
-                // 检查是否为部分结果（通过检查是否有 partial 属性或通过消息类型）
-                const isPartial = (message as any).isPartial || false;
-                
+              {chatHistory.map(message => {
+                const isUser = message.speaker === 'user';
+                const isPartial = Boolean(message.isPartial);
                 return (
-                  <div 
-                    key={message.id} 
-                    className={`chat-message ${message.speaker === 'user' ? 'user-message' : 'interviewer-message'} ${isPartial ? 'partial-message' : ''}`}
+                  <div
+                    key={message.id}
+                    className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}
                   >
-                    <div className="message-bubble">
-                      <div className="message-header">
-                        <span className="speaker-name">
-                          {message.speaker === 'user' ? '我' : '面试官'}
+                    <div
+                      className={`max-w-[85%] rounded-2xl border px-4 py-3 shadow-sm transition ${
+                        isUser
+                          ? 'border-brand-primary/50 bg-brand-primary/20 text-slate-50'
+                          : 'border-slate-800 bg-slate-900/60 text-slate-100'
+                      } ${isPartial ? 'border-dashed opacity-80' : ''}`}
+                    >
+                      <div className="mb-2 flex items-center justify-between text-xs text-slate-400">
+                        <span className="font-semibold text-slate-200">
+                          {isUser ? '我' : '面试官'}
                         </span>
-                        <span className="message-time">
+                        <span className="flex items-center gap-2">
                           {new Date(message.timestamp).toLocaleTimeString()}
-                          {isPartial && <span className="partial-badge">识别中...</span>}
+                          {isPartial && (
+                            <span className="rounded-full border border-amber-400/50 px-2 py-0.5 text-[10px] font-medium text-amber-300">
+                              识别中...
+                            </span>
+                          )}
                         </span>
                       </div>
-                      <div className={`message-content ${isPartial ? 'partial-content' : ''}`}>
+                      <div className={`text-sm leading-relaxed ${isPartial ? 'italic text-slate-200' : ''}`}>
                         {message.content}
                       </div>
                     </div>
                   </div>
                 );
               })}
-              <div ref={messagesEndRef} />
             </>
           )}
         </div>
       </div>
-      
-      {/* 手动输入面试官的话 */}
-      <div style={{ 
-        marginTop: '1rem',
-        padding: '1rem',
-        background: 'rgba(0, 0, 0, 0.2)',
-        borderRadius: '0.75rem',
-        border: '1px solid rgba(255, 255, 255, 0.1)'
-      }}>
-        <div style={{ 
-          fontSize: '0.875rem', 
-          color: '#e5e7eb', 
-          marginBottom: '0.5rem',
-          fontWeight: '600'
-        }}>
-          📝 手动输入面试官的话
+
+      <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
+        <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-200">
+          <span className="text-lg">📝</span>
+          手动输入面试官的话
         </div>
-        <div style={{ display: 'flex', gap: '0.5rem' }}>
+        <div className="flex flex-col gap-3 sm:flex-row">
           <input
             type="text"
             value={manualText}
             onChange={(e) => setManualText(e.target.value)}
             placeholder="输入面试官说的话..."
-            style={{
-              flex: 1,
-              padding: '0.5rem',
-              borderRadius: '0.375rem',
-              border: '1px solid rgba(255, 255, 255, 0.2)',
-              background: 'rgba(0, 0, 0, 0.3)',
-              color: '#e5e7eb',
-              fontSize: '0.875rem'
-            }}
-            onKeyPress={(e) => {
+            className="w-full rounded-xl border border-slate-800 bg-slate-950/60 px-4 py-2 text-sm text-slate-100 placeholder-slate-500 outline-none ring-brand-primary/30 transition focus:border-brand-primary/60 focus:ring"
+            onKeyDown={(e) => {
               if (e.key === 'Enter') {
                 handleManualInput();
               }
             }}
           />
           <button
+            type="button"
             onClick={handleManualInput}
             disabled={!manualText.trim()}
-            style={{
-              padding: '0.5rem 1.5rem',
-              borderRadius: '0.375rem',
-              border: 'none',
-              background: manualText.trim() ? 'linear-gradient(135deg, #10b981, #059669)' : 'rgba(107, 114, 128, 0.5)',
-              color: 'white',
-              cursor: manualText.trim() ? 'pointer' : 'not-allowed',
-              fontSize: '0.875rem',
-              fontWeight: '600',
-              minWidth: '80px',
-              transition: 'all 0.2s ease'
-            }}
+            className="rounded-xl bg-brand-primary px-6 py-2 text-sm font-semibold text-white shadow-lg shadow-brand-primary/20 transition hover:bg-brand-secondary disabled:cursor-not-allowed disabled:opacity-40"
           >
             发送
           </button>
         </div>
       </div>
-      
-      <AudioController 
-        onUserText={onUserText} 
+
+      <AudioController
+        onUserText={onUserText}
         onInterviewerText={onInterviewerText}
         sessionId={sessionId}
       />

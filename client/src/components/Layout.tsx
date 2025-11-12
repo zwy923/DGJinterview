@@ -1,6 +1,16 @@
-import { useState, useRef } from "react";
+import { useState } from "react";
 import LeftPanel from "./LeftPanel";
 import RightPanel from "./RightPanel";
+
+type Speaker = 'user' | 'interviewer';
+
+interface ChatItem {
+  id: string;
+  speaker: Speaker;
+  content: string;
+  timestamp: string;
+  isPartial?: boolean;
+}
 
 interface Props {
   sessionId?: string;
@@ -8,135 +18,132 @@ interface Props {
 
 export default function Layout({ sessionId = "default" }: Props) {
   const [activePanel, setActivePanel] = useState<'left' | 'right'>('left');
-  const [chatHistory, setChatHistory] = useState<Array<{
-    id: string;
-    speaker: 'user' | 'interviewer';
-    content: string;
-    timestamp: string;
-    isPartial?: boolean;
-  }>>([]);
-  
-  // 部分结果临时存储（用于更新）
-  const partialResultsRef = useRef<Map<string, number>>(new Map());
+  const [chatHistory, setChatHistory] = useState<ChatItem[]>([]);
 
-  // 添加新消息到聊天历史
-  const addMessage = (speaker: 'user' | 'interviewer', content: string) => {
-    if (content.trim()) {
-      const newMessage = {
-        id: Date.now().toString(),
-        speaker,
-        content: content.trim(),
-        timestamp: new Date().toISOString()
-      };
-      setChatHistory(prev => [...prev, newMessage]);
-    }
-  };
-
-  // 处理用户语音识别结果（支持部分结果）
   const handleUserText = (text: string, isPartial: boolean = false) => {
     if (isPartial) {
-      // 部分结果：更新或创建临时消息
       const partialId = 'user-partial';
       setChatHistory(prev => {
         const filtered = prev.filter(msg => msg.id !== partialId);
-        return [...filtered, {
-          id: partialId,
-          speaker: 'user' as const,
-          content: text,
-          timestamp: new Date().toISOString(),
-          isPartial: true
-        }];
+        return [
+          ...filtered,
+          {
+            id: partialId,
+            speaker: 'user',
+            content: text,
+            timestamp: new Date().toISOString(),
+            isPartial: true
+          }
+        ];
       });
     } else {
-      // 最终结果：移除部分结果，添加最终结果
       setChatHistory(prev => {
         const filtered = prev.filter(msg => msg.id !== 'user-partial');
-        return [...filtered, {
-          id: Date.now().toString(),
-          speaker: 'user' as const,
-          content: text,
-          timestamp: new Date().toISOString(),
-          isPartial: false
-        }];
+        return [
+          ...filtered,
+          {
+            id: Date.now().toString(),
+            speaker: 'user',
+            content: text,
+            timestamp: new Date().toISOString(),
+            isPartial: false
+          }
+        ];
       });
     }
   };
 
-  // 处理面试官语音识别结果（支持部分结果）
   const handleInterviewerText = (text: string, isPartial: boolean = false) => {
     if (isPartial) {
-      // 部分结果：更新或创建临时消息
       const partialId = 'interviewer-partial';
       setChatHistory(prev => {
         const filtered = prev.filter(msg => msg.id !== partialId);
-        return [...filtered, {
-          id: partialId,
-          speaker: 'interviewer' as const,
-          content: text,
-          timestamp: new Date().toISOString(),
-          isPartial: true
-        }];
+        return [
+          ...filtered,
+          {
+            id: partialId,
+            speaker: 'interviewer',
+            content: text,
+            timestamp: new Date().toISOString(),
+            isPartial: true
+          }
+        ];
       });
     } else {
-      // 最终结果：移除部分结果，添加最终结果
       setChatHistory(prev => {
         const filtered = prev.filter(msg => msg.id !== 'interviewer-partial');
-        return [...filtered, {
-          id: Date.now().toString(),
-          speaker: 'interviewer' as const,
-          content: text,
-          timestamp: new Date().toISOString(),
-          isPartial: false
-        }];
+        return [
+          ...filtered,
+          {
+            id: Date.now().toString(),
+            speaker: 'interviewer',
+            content: text,
+            timestamp: new Date().toISOString(),
+            isPartial: false
+          }
+        ];
       });
     }
   };
 
   return (
-    <div className="app-container">
-      {/* 应用头部 */}
-      <header className="app-header">
-        <div className="header-content">
-          <h1 className="app-title">
-            <span className="title-icon">🎯</span>
-            11面试
-          </h1>
-          <div className="header-subtitle">面试辅助</div>
+    <div className="flex min-h-dvh flex-col bg-slate-950 text-slate-100">
+      <header className="border-b border-slate-800 bg-slate-900/70 backdrop-blur">
+        <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-2 px-4 py-6 sm:flex-row">
+          <div className="text-center sm:text-left">
+            <h1 className="flex items-center justify-center gap-3 text-3xl font-semibold text-white sm:justify-start">
+              <span className="text-4xl">🎯</span>
+              11面试
+            </h1>
+            <p className="text-sm font-medium text-slate-300">面试辅助</p>
+          </div>
         </div>
       </header>
 
-      {/* 移动端标签页切换 */}
-      <nav className="mobile-tabs">
-        <button 
-          className={`tab-button ${activePanel === 'left' ? 'active' : ''}`}
+      <nav className="sticky top-0 z-10 flex w-full border-b border-slate-800 bg-slate-900/80 backdrop-blur md:hidden">
+        <button
+          className={`flex flex-1 items-center justify-center gap-2 px-3 py-3 text-sm font-semibold transition ${
+            activePanel === 'left'
+              ? 'border-b-2 border-brand-primary/70 bg-brand-primary/20 text-brand-primary'
+              : 'text-slate-300 hover:bg-slate-800/70 hover:text-brand-primary'
+          }`}
           onClick={() => setActivePanel('left')}
         >
-          <span className="tab-icon">💬</span>
-          <span className="tab-text">聊天记录</span>
+          <span className="text-lg">💬</span>
+          <span>聊天记录</span>
         </button>
-        <button 
-          className={`tab-button ${activePanel === 'right' ? 'active' : ''}`}
+        <button
+          className={`flex flex-1 items-center justify-center gap-2 px-3 py-3 text-sm font-semibold transition ${
+            activePanel === 'right'
+              ? 'border-b-2 border-brand-primary/70 bg-brand-primary/20 text-brand-primary'
+              : 'text-slate-300 hover:bg-slate-800/70 hover:text-brand-primary'
+          }`}
           onClick={() => setActivePanel('right')}
         >
-          <span className="tab-icon">🤖</span>
-          <span className="tab-text">面试助手</span>
+          <span className="text-lg">🤖</span>
+          <span>面试助手</span>
         </button>
       </nav>
 
-      {/* 主内容区域 */}
-      <main className="main-content">
-        <div className={`left-panel ${activePanel === 'left' ? 'active' : ''}`}>
-          <LeftPanel 
+      <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-6 px-4 py-6 md:flex-row md:items-start md:gap-8">
+        <div
+          className={`${
+            activePanel === 'left' ? 'flex' : 'hidden'
+          } md:flex md:min-h-[28rem] md:flex-1 md:overflow-hidden`}
+        >
+          <LeftPanel
             chatHistory={chatHistory}
             onUserText={handleUserText}
             onInterviewerText={handleInterviewerText}
             sessionId={sessionId}
           />
         </div>
-        <div className={`right-panel ${activePanel === 'right' ? 'active' : ''}`}>
-          <RightPanel 
-            chatHistory={chatHistory}
-          />
+        <div
+          className={`${
+            activePanel === 'right' ? 'block' : 'hidden'
+          } md:block md:w-[360px] md:flex-none md:self-stretch`}
+        >
+          <RightPanel chatHistory={chatHistory} />
         </div>
       </main>
     </div>

@@ -146,7 +146,7 @@ export function useChatHistory({ sessionId, onMessageAdd, onSessionUpdate }: Cha
   };
 
   // 发送结构化数据到GPT API
-  const sendToGPT = async (structuredData: any) => {
+  const sendToGPT = async (structuredData: ReturnType<typeof exportChatHistory>) => {
     setIsLoading(true);
     try {
       const response = await fetch(`http://${window.location.hostname}:8000/api/gpt/analyze`, {
@@ -157,7 +157,7 @@ export function useChatHistory({ sessionId, onMessageAdd, onSessionUpdate }: Cha
         body: JSON.stringify({
           type: 'interview_analysis',
           session_id: sessionId,
-          data: {}
+          data: structuredData
         })
       });
 

@@ -16,23 +16,21 @@ export default function RightPanel({ chatHistory }: Props) {
   const [gptReply, setGptReply] = useState("等待面试对话，我将为您提供智能回答建议...");
   const [isLoading, setIsLoading] = useState(false);
 
-  // 当检测到新的用户消息时，调用GPT获取建议
   useEffect(() => {
     const lastUserMessage = chatHistory
       .filter(msg => msg.speaker === 'user')
       .slice(-1)[0];
-    
+
     if (lastUserMessage && lastUserMessage.content.trim()) {
       setIsLoading(true);
-      
-      // 构建上下文，包含最近的对话
-      const recentMessages = chatHistory.slice(-6); // 最近6条消息
-      const context = recentMessages.map(msg => 
-        `${msg.speaker === 'user' ? '我' : '面试官'}: ${msg.content}`
-      ).join('\n');
-      
+
+      const recentMessages = chatHistory.slice(-6);
+      const context = recentMessages
+        .map(msg => `${msg.speaker === 'user' ? '我' : '面试官'}: ${msg.content}`)
+        .join('\n');
+
       const prompt = `面试对话上下文：\n${context}\n\n请基于以上对话，为用户提供面试回答建议和技巧。`;
-      
+
       askGPT(prompt)
         .then(reply => {
           setGptReply(reply);
@@ -47,22 +45,22 @@ export default function RightPanel({ chatHistory }: Props) {
   }, [chatHistory]);
 
   return (
-    <div className="right-panel-content">
-      <h2>🤖 面试助手</h2>
-      <div className="card gpt-box">
-        <div className="gpt-content">
+    <div className="flex h-full flex-1 flex-col gap-6 md:sticky md:top-28">
+      <div className="flex items-center justify-between">
+        <h2 className="text-xl font-semibold text-white">🤖 面试助手</h2>
+      </div>
+      <div className="relative flex min-h-[18rem] flex-1 flex-col overflow-hidden rounded-2xl border border-slate-800 bg-slate-900/70 p-6 shadow-xl">
+        <div className="custom-scrollbar flex-1 overflow-y-auto text-sm leading-relaxed text-slate-200">
           {isLoading ? (
-            <div style={{ 
-              display: 'flex', 
-              alignItems: 'center', 
-              gap: '0.5rem',
-              color: '#a1a1aa'
-            }}>
-              <div className="loading"></div>
+            <div className="flex items-center gap-3 text-slate-400">
+              <span className="relative flex h-3 w-3">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-brand-primary/60" />
+                <span className="relative inline-flex h-3 w-3 rounded-full bg-brand-primary" />
+              </span>
               正在分析您的回答，生成建议中...
             </div>
           ) : (
-            gptReply
+            <p className="whitespace-pre-line text-slate-100">{gptReply}</p>
           )}
         </div>
       </div>

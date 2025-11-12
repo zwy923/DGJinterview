@@ -5,8 +5,8 @@ import AudioLevelMeter from "./AudioLevelMeter";
 import { AudioWorkletManager } from "../audio/audioWorkletManager";
 
 interface Props {
-  onUserText: (text: string) => void;
-  onInterviewerText: (text: string) => void;
+  onUserText: (text: string, isPartial?: boolean) => void;
+  onInterviewerText: (text: string, isPartial?: boolean) => void;
   sessionId?: string; // 会话ID
 }
 
@@ -326,120 +326,62 @@ export default function AudioController({ onUserText, onInterviewerText, session
   }, []);
 
   return (
-    <div className="audio-controller" style={{ marginTop: "1rem" }}>
+    <div className="mt-6 flex flex-col gap-4">
       {error && (
-        <div style={{ 
-          color: '#ef4444', 
-          fontSize: '0.875rem', 
-          marginBottom: '0.5rem',
-          padding: '0.5rem',
-          background: 'rgba(239, 68, 68, 0.1)',
-          borderRadius: '0.375rem',
-          border: '1px solid rgba(239, 68, 68, 0.3)'
-        }}>
+        <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200 shadow-inner">
           {error}
         </div>
       )}
-      
-      <div style={{ 
-        display: 'flex', 
-        gap: '0.75rem', 
-        marginBottom: '1rem', 
-        flexWrap: 'wrap',
-        justifyContent: 'center',
-        alignItems: 'center'
-      }}>
-        {/* 麦克风录音按钮 */}
-        <button 
+
+      <div className="flex flex-wrap items-center justify-center gap-3">
+        <button
           onClick={recording ? stopMic : startMic}
-          style={{ 
-            background: recording 
-              ? 'linear-gradient(135deg, #ef4444, #dc2626)' 
-              : 'linear-gradient(135deg, #10b981, #059669)',
-            color: 'white',
-            border: 'none',
-            borderRadius: '0.5rem',
-            padding: '0.75rem 1.5rem',
-            cursor: 'pointer',
-            fontSize: '0.875rem',
-            fontWeight: '600',
-            minWidth: '120px',
-            transition: 'all 0.2s ease',
-            boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)'
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.transform = 'translateY(-1px)';
-            e.currentTarget.style.boxShadow = '0 4px 8px rgba(0, 0, 0, 0.15)';
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.transform = 'translateY(0)';
-            e.currentTarget.style.boxShadow = '0 2px 4px rgba(0, 0, 0, 0.1)';
-          }}
+          className={`rounded-xl bg-gradient-to-r px-5 py-2.5 text-sm font-semibold text-white shadow-lg transition duration-200 hover:-translate-y-0.5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-primary/60 ${
+            recording
+              ? 'from-rose-500 to-rose-600'
+              : 'from-emerald-500 to-emerald-600'
+          }`}
         >
           {recording ? '⏹ 停止麦克风' : '🎤 开始麦克风'}
         </button>
 
-        {/* 系统音频按钮 */}
-        <button 
+        <button
           onClick={systemAudioEnabled ? stopSystem : startSystem}
-          style={{ 
-            background: systemAudioEnabled 
-              ? 'linear-gradient(135deg, #ef4444, #dc2626)' 
-              : 'linear-gradient(135deg, #8b5cf6, #7c3aed)',
-            color: 'white',
-            border: 'none',
-            borderRadius: '0.5rem',
-            padding: '0.75rem 1.5rem',
-            cursor: 'pointer',
-            fontSize: '0.875rem',
-            fontWeight: '600',
-            minWidth: '120px',
-            transition: 'all 0.2s ease',
-            boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)'
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.transform = 'translateY(-1px)';
-            e.currentTarget.style.boxShadow = '0 4px 8px rgba(0, 0, 0, 0.15)';
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.transform = 'translateY(0)';
-            e.currentTarget.style.boxShadow = '0 2px 4px rgba(0, 0, 0, 0.1)';
-          }}
+          className={`rounded-xl bg-gradient-to-r px-5 py-2.5 text-sm font-semibold text-white shadow-lg transition duration-200 hover:-translate-y-0.5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-primary/60 ${
+            systemAudioEnabled
+              ? 'from-rose-500 to-rose-600'
+              : 'from-brand-primary to-brand-secondary'
+          }`}
         >
           {systemAudioEnabled ? '⏹ 停止系统音频' : '🔊 开始系统音频'}
         </button>
+
+        <button
+          type="button"
+          onClick={() => setShowTestPanel(true)}
+          className="rounded-xl border border-slate-700 bg-slate-900/70 px-5 py-2.5 text-sm font-semibold text-slate-200 shadow-lg transition duration-200 hover:-translate-y-0.5 hover:border-brand-primary/60 hover:text-brand-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-primary/60"
+        >
+          🎧 音频测试
+        </button>
       </div>
-      
-      {/* 实时音频监控 */}
+
       {(recording || systemAudioEnabled) && (
-        <div style={{
-          backgroundColor: '#f9fafb',
-          padding: '1rem',
-          borderRadius: '0.5rem',
-          marginTop: '1rem',
-          border: '1px solid #e5e7eb'
-        }}>
-          <div style={{ 
-            fontSize: '0.875rem', 
-            fontWeight: '600', 
-            marginBottom: '0.75rem',
-            color: '#374151',
-            textAlign: 'center'
-          }}>
+        <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
+          <div className="mb-3 text-center text-sm font-semibold text-slate-200">
             📊 实时音频监控
           </div>
-          
+
           {recording && (
-            <AudioLevelMeter 
+            <AudioLevelMeter
               stream={userStreamRef.current}
               label="🎤 麦克风"
               color="#10b981"
               isActive={recording}
             />
           )}
-          
+
           {systemAudioEnabled && (
-            <AudioLevelMeter 
+            <AudioLevelMeter
               stream={systemStream}
               label="🔊 系统音频"
               color="#8b5cf6"
@@ -448,45 +390,45 @@ export default function AudioController({ onUserText, onInterviewerText, session
           )}
         </div>
       )}
-      
-      <div style={{ 
-        fontSize: '0.75rem', 
-        color: '#a1a1aa', 
-        marginTop: '0.5rem',
-        textAlign: 'center'
-      }}>
-        <div style={{ marginBottom: '0.25rem' }}>
-          状态: <span style={{ 
-            color: connectionStatus.includes('已连接') ? '#10b981' : 
-                   connectionStatus.includes('错误') ? '#ef4444' : '#f59e0b'
-          }}>
+
+      <div className="text-center text-xs text-slate-400">
+        <div className="mb-1">
+          状态:
+          <span
+            className={`ml-1 font-semibold ${
+              connectionStatus.includes('已连接')
+                ? 'text-emerald-400'
+                : connectionStatus.includes('错误')
+                  ? 'text-rose-400'
+                  : 'text-amber-400'
+            }`}
+          >
             {connectionStatus}
           </span>
         </div>
-        <div style={{ marginBottom: '0.25rem' }}>
-          麦克风: <span style={{ color: recording ? '#10b981' : '#f59e0b' }}>
+        <div className="mb-1">
+          麦克风:
+          <span className={`ml-1 font-semibold ${recording ? 'text-emerald-400' : 'text-amber-400'}`}>
             {recording ? '✓ 已启用' : '✗ 未启用'}
           </span>
         </div>
-        <div style={{ marginBottom: '0.25rem' }}>
-          系统音频: <span style={{ 
-            color: systemAudioEnabled ? '#10b981' : '#f59e0b'
-          }}>
+        <div className="mb-2">
+          系统音频:
+          <span className={`ml-1 font-semibold ${systemAudioEnabled ? 'text-emerald-400' : 'text-amber-400'}`}>
             {systemAudioEnabled ? '✓ 已启用' : '✗ 未启用'}
           </span>
         </div>
-        <div>
-          {recording || systemAudioEnabled ? 
-            (recording && systemAudioEnabled ? 
-              "正在录音中，同时捕获您和面试官的声音..." : 
-              recording ? "正在录音中，仅捕获您的声音" :
-              "正在录音中，仅捕获面试官的声音"
-            ) : 
-            "点击按钮开始录音，可分别控制麦克风和系统音频"
-          }
+        <div className="text-slate-500">
+          {recording || systemAudioEnabled
+            ? recording && systemAudioEnabled
+              ? '正在录音中，同时捕获您和面试官的声音...'
+              : recording
+                ? '正在录音中，仅捕获您的声音'
+                : '正在录音中，仅捕获面试官的声音'
+            : '点击按钮开始录音，可分别控制麦克风和系统音频'}
         </div>
       </div>
-      
+
       {showTestPanel && (
         <AudioTestPanel onClose={() => setShowTestPanel(false)} />
       )}
