@@ -216,7 +216,8 @@ class LLMAPI:
     async def generate(
         self,
         prompt: str,
-        stream: bool = False
+        stream: bool = False,
+        max_tokens: Optional[int] = None
     ) -> str:
         """
         生成文本（非流式，返回完整结果）
@@ -224,6 +225,7 @@ class LLMAPI:
         Args:
             prompt: 提示词
             stream: 是否流式返回（此方法始终返回完整结果）
+            max_tokens: 最大token数（可选，用于限制回答长度）
         
         Returns:
             生成的文本
@@ -231,7 +233,7 @@ class LLMAPI:
         messages = [{"role": "user", "content": prompt}]
         content_parts = []
         
-        async for chunk in self.chat(messages, stream=False):
+        async for chunk in self.chat(messages, stream=False, max_tokens=max_tokens):
             if chunk.get("content"):
                 content_parts.append(chunk["content"])
             if chunk.get("done"):

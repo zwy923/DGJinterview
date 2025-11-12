@@ -45,8 +45,9 @@ export default function LeftPanel({
     
     try {
       // 使用askGPT API，为面试者提供建议
+      // 注意：后端会自动获取简历、岗位信息和对话上下文
       const { askGPT } = await import("../api/apiClient");
-      const prompt = `你是一位专业的面试助手，专门为面试者提供帮助。请回答以下问题：${userQuestion}\n\n请基于当前面试上下文、岗位信息和候选人简历来回答。回答应该专业、实用，帮助面试者更好地准备和应对面试。`;
+      const prompt = userQuestion; // 简化prompt，后端会添加所有上下文信息
       
       const reply = await askGPT(prompt, {
         sessionId: sessionId,
