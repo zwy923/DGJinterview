@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef } from "react";
 import AudioController from "./AudioController";
+import { getChatHistory, type ChatMessage as ApiChatMessage } from "../api/apiClient";
 
 interface ChatMessage {
   id: string;
-  speaker: 'user' | 'interviewer';
+  speaker: 'user' | 'interviewer' | 'system';
   content: string;
   timestamp: string;
   isPartial?: boolean;
@@ -23,8 +24,11 @@ export default function LeftPanel({
   sessionId = "default"
 }: Props) {
   const [manualText, setManualText] = useState("");
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const chatMessagesRef = useRef<HTMLDivElement>(null);
+  const shouldAutoScrollRef = useRef(true);
+  const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // 手动输入面试官的话
   const handleManualInput = () => {
@@ -34,22 +38,114 @@ export default function LeftPanel({
     }
   };
 
-  // 自动滚动到最新消息
-  const scrollToBottom = () => {
-    if (chatMessagesRef.current) {
-      // 使用 requestAnimationFrame 确保在渲染后滚动
-      requestAnimationFrame(() => {
-        if (chatMessagesRef.current) {
+  // 检查是否接近底部
+  const isNearBottom = (element: HTMLElement): boolean => {
+    const threshold = 100; // 100px 阈值
+    const distance = element.scrollHeight - element.scrollTop - element.clientHeight;
+    return distance < threshold;
+  };
+
+  // 智能滚动到最新消息
+  const scrollToBottom = (force: boolean = false) => {
+    if (!chatMessagesRef.current) return;
+    
+    const element = chatMessagesRef.current;
+    
+    // 如果用户手动滚动了，检查是否需要自动滚动
+    if (!force && !shouldAutoScrollRef.current) {
+      // 如果用户不在底部附近，不自动滚动
+      if (!isNearBottom(element)) {
+        return;
+      }
+      // 如果用户在底部附近，恢复自动滚动
+      shouldAutoScrollRef.current = true;
+    }
+    
+    // 使用 requestAnimationFrame 确保在渲染后滚动
+    requestAnimationFrame(() => {
+      if (chatMessagesRef.current && shouldAutoScrollRef.current) {
+        // 使用 scrollIntoView 更可靠
+        if (messagesEndRef.current) {
+          messagesEndRef.current.scrollIntoView({ behavior: 'smooth', block: 'end' });
+        } else {
+          // 降级方案
           chatMessagesRef.current.scrollTop = chatMessagesRef.current.scrollHeight;
         }
-      });
+      }
+    });
+  };
+
+  // 处理滚动事件，检测用户是否手动滚动
+  const handleScroll = () => {
+    if (!chatMessagesRef.current) return;
+    
+    const element = chatMessagesRef.current;
+    const isAtBottom = isNearBottom(element);
+    
+    // 清除之前的超时
+    if (scrollTimeoutRef.current) {
+      clearTimeout(scrollTimeoutRef.current);
+    }
+    
+    // 如果用户不在底部，暂停自动滚动
+    if (!isAtBottom) {
+      shouldAutoScrollRef.current = false;
+    } else {
+      // 如果用户滚动回底部，恢复自动滚动
+      scrollTimeoutRef.current = setTimeout(() => {
+        shouldAutoScrollRef.current = true;
+      }, 500); // 500ms 延迟，避免频繁切换
     }
   };
 
-  // 当聊天记录更新时自动滚动
+  // 当聊天记录更新时智能滚动
   useEffect(() => {
     scrollToBottom();
   }, [chatHistory]);
+
+  // 添加滚动事件监听
+  useEffect(() => {
+    const element = chatMessagesRef.current;
+    if (element) {
+      element.addEventListener('scroll', handleScroll, { passive: true });
+      return () => {
+        element.removeEventListener('scroll', handleScroll);
+        if (scrollTimeoutRef.current) {
+          clearTimeout(scrollTimeoutRef.current);
+        }
+      };
+    }
+  }, []);
+
+  // 从后端加载聊天历史
+  useEffect(() => {
+    const loadHistory = async () => {
+      if (!sessionId) return;
+      
+      setIsLoadingHistory(true);
+      try {
+        const history = await getChatHistory(sessionId);
+        // 将后端格式转换为前端格式
+        const formattedHistory: ChatMessage[] = history.map((msg: ApiChatMessage) => ({
+          id: msg.id?.toString() || Date.now().toString(),
+          speaker: msg.speaker as 'user' | 'interviewer' | 'system',
+          content: msg.content,
+          timestamp: msg.timestamp || new Date().toISOString(),
+          isPartial: false,
+        }));
+        
+        // 合并本地和远程消息（避免重复）
+        // 注意：这里只是加载，实际合并逻辑应该在父组件中处理
+        console.log('Loaded chat history from backend:', formattedHistory.length, 'messages');
+      } catch (error) {
+        console.error('Failed to load chat history:', error);
+      } finally {
+        setIsLoadingHistory(false);
+      }
+    };
+
+    loadHistory();
+  }, [sessionId]);
 
   return (
     <div className="left-panel-content">
@@ -58,7 +154,12 @@ export default function LeftPanel({
       {/* 聊天记录显示区域 */}
       <div className="chat-container">
         <div className="chat-messages" ref={chatMessagesRef}>
-          {chatHistory.length === 0 ? (
+          {isLoadingHistory ? (
+            <div className="empty-chat">
+              <div className="empty-icon">⏳</div>
+              <p>正在加载聊天记录...</p>
+            </div>
+          ) : chatHistory.length === 0 ? (
             <div className="empty-chat">
               <div className="empty-icon">💭</div>
               <p>开始语音识别，对话记录将显示在这里</p>

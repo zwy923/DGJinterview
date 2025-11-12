@@ -13,8 +13,6 @@ export interface InterviewSession {
   id: string;
   config: {
     programmingLanguages: string[];
-    uploadResume: boolean;
-    useKnowledgeBase: boolean;
     position: string;
     jobRequirements: string;
   };

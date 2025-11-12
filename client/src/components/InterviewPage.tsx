@@ -39,8 +39,6 @@ export default function InterviewPage() {
           id: id!,
           config: {
             programmingLanguages: interview.programmingLanguages,
-            uploadResume: interview.uploadResume,
-            useKnowledgeBase: interview.useKnowledgeBase,
             position: interview.position,
             jobRequirements: interview.jobRequirements
           },
@@ -184,17 +182,6 @@ export default function InterviewPage() {
           <p className="config-text">{session.config.jobRequirements}</p>
         </div>
         
-        <div className="config-section">
-          <h3>选项</h3>
-          <div className="config-options">
-            <span className={`option ${session.config.uploadResume ? 'enabled' : 'disabled'}`}>
-              上传简历: {session.config.uploadResume ? '是' : '否'}
-            </span>
-            <span className={`option ${session.config.useKnowledgeBase ? 'enabled' : 'disabled'}`}>
-              使用知识库: {session.config.useKnowledgeBase ? '是' : '否'}
-            </span>
-          </div>
-        </div>
       </div>
 
       {/* 聊天记录统计 */}

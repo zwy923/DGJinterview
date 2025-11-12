@@ -1,6 +1,7 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import LeftPanel from "./LeftPanel";
 import RightPanel from "./RightPanel";
+import { getChatHistory, type ChatMessage as ApiChatMessage } from "../api/apiClient";
 
 interface Props {
   sessionId?: string;
@@ -18,6 +19,40 @@ export default function Layout({ sessionId = "default" }: Props) {
   
   // 部分结果临时存储（用于更新）
   const partialResultsRef = useRef<Map<string, number>>(new Map());
+
+  // 从后端加载聊天历史
+  useEffect(() => {
+    const loadHistory = async () => {
+      if (!sessionId) return;
+      
+      try {
+        const history = await getChatHistory(sessionId);
+        // 将后端格式转换为前端格式
+        const formattedHistory = history.map((msg: ApiChatMessage) => ({
+          id: msg.id?.toString() || Date.now().toString(),
+          speaker: msg.speaker as 'user' | 'interviewer',
+          content: msg.content,
+          timestamp: msg.timestamp || new Date().toISOString(),
+          isPartial: false,
+        }));
+        
+        // 合并到现有历史（避免重复）
+        setChatHistory(prev => {
+          const existingIds = new Set(prev.map(m => m.id));
+          const newMessages = formattedHistory.filter(m => !existingIds.has(m.id));
+          // 按时间戳排序
+          const allMessages = [...prev, ...newMessages].sort((a, b) => 
+            new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+          );
+          return allMessages;
+        });
+      } catch (error) {
+        console.error('Failed to load chat history:', error);
+      }
+    };
+
+    loadHistory();
+  }, [sessionId]);
 
   // 添加新消息到聊天历史
   const addMessage = (speaker: 'user' | 'interviewer', content: string) => {
@@ -136,6 +171,7 @@ export default function Layout({ sessionId = "default" }: Props) {
         <div className={`right-panel ${activePanel === 'right' ? 'active' : ''}`}>
           <RightPanel 
             chatHistory={chatHistory}
+            sessionId={sessionId}
           />
         </div>
       </main>

@@ -633,6 +633,12 @@ h2::before {
   gap: 0.75rem;
   scroll-behavior: smooth;
   -webkit-overflow-scrolling: touch;
+  will-change: scroll-position;
+  /* 确保滚轮可以控制 */
+  overscroll-behavior: contain;
+  /* 确保滚动条可见 */
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.3) rgba(255, 255, 255, 0.1);
 }
 
 .empty-chat {
