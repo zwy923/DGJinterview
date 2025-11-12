@@ -50,22 +50,49 @@ class LLMAPI:
             "Content-Type": "application/json"
         }
         
+        # 根据模型类型选择正确的参数名
+        # 某些新模型（如Claude）使用 max_completion_tokens，而OpenAI使用 max_tokens
+        token_limit = max_tokens or self.max_tokens
         payload = {
             "model": self.model,
             "messages": messages,
             "stream": stream,
             "temperature": temperature or self.temperature,
-            "max_tokens": max_tokens or self.max_tokens,
         }
+        
+        # 检查模型名称，决定使用哪个参数
+        use_max_completion_tokens = False
+        if "claude" in self.model.lower() or "anthropic" in self.base_url.lower():
+            payload["max_completion_tokens"] = token_limit
+            use_max_completion_tokens = True
+        else:
+            payload["max_tokens"] = token_limit
         
         try:
             async with aiohttp.ClientSession() as session:
+                # 第一次尝试
                 async with session.post(url, headers=headers, json=payload) as response:
                     if response.status != 200:
                         error_text = await response.text()
                         logger.error(f"LLM API错误: {response.status} - {error_text}")
-                        yield {"content": f"API错误: {error_text}", "done": True, "error": True}
-                        return
+                        
+                        # 如果错误是因为 max_tokens 参数，尝试使用 max_completion_tokens
+                        if not use_max_completion_tokens and "max_tokens" in error_text.lower() and "max_completion_tokens" in error_text.lower():
+                            logger.info("检测到 max_tokens 参数错误，尝试使用 max_completion_tokens")
+                            # 修改payload并重试
+                            del payload["max_tokens"]
+                            payload["max_completion_tokens"] = token_limit
+                            async with session.post(url, headers=headers, json=payload) as retry_response:
+                                if retry_response.status != 200:
+                                    retry_error_text = await retry_response.text()
+                                    logger.error(f"LLM API重试后仍然错误: {retry_response.status} - {retry_error_text}")
+                                    yield {"content": f"API错误: {retry_error_text}", "done": True, "error": True}
+                                    return
+                                # 重试成功，使用retry_response继续处理
+                                response = retry_response
+                        else:
+                            yield {"content": f"API错误: {error_text}", "done": True, "error": True}
+                            return
                     
                     if stream:
                         async for line in response.content:

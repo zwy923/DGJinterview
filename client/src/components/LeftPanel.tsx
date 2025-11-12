@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import AudioController from "./AudioController";
-import { getChatHistory, type ChatMessage as ApiChatMessage } from "../api/apiClient";
+import { getChatHistory, getAgentSuggestion, type ChatMessage as ApiChatMessage } from "../api/apiClient";
 
 interface ChatMessage {
   id: string;
@@ -14,27 +14,59 @@ interface Props {
   chatHistory: ChatMessage[];
   onUserText: (text: string) => void;
   onInterviewerText: (text: string) => void;
+  onAgentReply?: (question: string, reply: string) => void;
   sessionId?: string;
+  userId?: string;
 }
 
 export default function LeftPanel({ 
   chatHistory, 
   onUserText, 
   onInterviewerText,
-  sessionId = "default"
+  onAgentReply,
+  sessionId = "default",
+  userId
 }: Props) {
-  const [manualText, setManualText] = useState("");
+  const [questionText, setQuestionText] = useState("");
+  const [isAskingAgent, setIsAskingAgent] = useState(false);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const chatMessagesRef = useRef<HTMLDivElement>(null);
   const shouldAutoScrollRef = useRef(true);
   const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  // 手动输入面试官的话
-  const handleManualInput = () => {
-    if (manualText.trim()) {
-      onInterviewerText(manualText.trim());
-      setManualText("");
+  // 向agent提问
+  const handleAskAgent = async () => {
+    if (!questionText.trim() || isAskingAgent) return;
+    
+    const userQuestion = questionText.trim();
+    setQuestionText("");
+    setIsAskingAgent(true);
+    
+    try {
+      // 使用askGPT API，让agent以面试官身份回答问题
+      const { askGPT } = await import("../api/apiClient");
+      const prompt = `你是一位专业的面试官助手。请回答以下问题：${userQuestion}\n\n请基于当前面试上下文、岗位信息和候选人简历来回答。回答应该专业、简洁、有助于面试进行。`;
+      
+      const reply = await askGPT(prompt, {
+        sessionId: sessionId,
+        userId: userId,
+        useRag: true
+      });
+      
+      if (reply && reply.trim()) {
+        // 通过回调将问题和回答传递给父组件，显示在RightPanel
+        if (onAgentReply) {
+          onAgentReply(userQuestion, reply.trim());
+        }
+      } else {
+        alert("未能获取回答，请稍后重试");
+      }
+    } catch (error: any) {
+      console.error("向agent提问失败:", error);
+      alert(`提问失败: ${error.message || "未知错误"}`);
+    } finally {
+      setIsAskingAgent(false);
     }
   };
 
@@ -198,7 +230,7 @@ export default function LeftPanel({
         </div>
       </div>
       
-      {/* 手动输入面试官的话 */}
+      {/* 向Agent提问 */}
       <div style={{ 
         marginTop: '1rem',
         padding: '1rem',
@@ -212,14 +244,22 @@ export default function LeftPanel({
           marginBottom: '0.5rem',
           fontWeight: '600'
         }}>
-          📝 手动输入面试官的话
+          🤖 向AI助手提问
+        </div>
+        <div style={{ 
+          fontSize: '0.75rem', 
+          color: '#9ca3af', 
+          marginBottom: '0.75rem'
+        }}>
+          输入问题，AI助手将基于当前面试上下文、岗位信息和简历给出专业回答
         </div>
         <div style={{ display: 'flex', gap: '0.5rem' }}>
           <input
             type="text"
-            value={manualText}
-            onChange={(e) => setManualText(e.target.value)}
-            placeholder="输入面试官说的话..."
+            value={questionText}
+            onChange={(e) => setQuestionText(e.target.value)}
+            placeholder="输入您的问题..."
+            disabled={isAskingAgent}
             style={{
               flex: 1,
               padding: '0.5rem',
@@ -230,28 +270,30 @@ export default function LeftPanel({
               fontSize: '0.875rem'
             }}
             onKeyPress={(e) => {
-              if (e.key === 'Enter') {
-                handleManualInput();
+              if (e.key === 'Enter' && !isAskingAgent) {
+                handleAskAgent();
               }
             }}
           />
           <button
-            onClick={handleManualInput}
-            disabled={!manualText.trim()}
+            onClick={handleAskAgent}
+            disabled={!questionText.trim() || isAskingAgent}
             style={{
               padding: '0.5rem 1.5rem',
               borderRadius: '0.375rem',
               border: 'none',
-              background: manualText.trim() ? 'linear-gradient(135deg, #10b981, #059669)' : 'rgba(107, 114, 128, 0.5)',
+              background: (!questionText.trim() || isAskingAgent)
+                ? 'rgba(107, 114, 128, 0.5)' 
+                : 'linear-gradient(135deg, #3b82f6, #2563eb)',
               color: 'white',
-              cursor: manualText.trim() ? 'pointer' : 'not-allowed',
+              cursor: (!questionText.trim() || isAskingAgent) ? 'not-allowed' : 'pointer',
               fontSize: '0.875rem',
               fontWeight: '600',
               minWidth: '80px',
               transition: 'all 0.2s ease'
             }}
           >
-            发送
+            {isAskingAgent ? '提问中...' : '提问'}
           </button>
         </div>
       </div>

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { askGPT } from "../api/apiClient";
 
 interface ChatMessage {
@@ -12,11 +12,19 @@ interface Props {
   chatHistory: ChatMessage[];
   sessionId?: string;
   userId?: string;
+  agentReply?: { question: string; reply: string } | null;
 }
 
-export default function RightPanel({ chatHistory, sessionId = "default", userId }: Props) {
+export default function RightPanel({ chatHistory, sessionId = "default", userId, agentReply }: Props) {
   const [gptReply, setGptReply] = useState("点击「生成建议」按钮，根据当前对话获取智能回答建议...");
   const [isLoading, setIsLoading] = useState(false);
+
+  // 当收到agent回答时，更新显示
+  useEffect(() => {
+    if (agentReply) {
+      setGptReply(agentReply.reply);
+    }
+  }, [agentReply]);
 
   // 手动生成回答建议
   const handleGetSuggestion = async () => {
@@ -55,7 +63,7 @@ export default function RightPanel({ chatHistory, sessionId = "default", userId 
     <div className="right-panel-content">
       <h2>🤖 面试助手</h2>
       
-      {/* AI 回答建议区域 */}
+      {/* Agent回答区域 */}
       <div className="card gpt-box">
         <div style={{ 
           display: 'flex',
@@ -69,7 +77,7 @@ export default function RightPanel({ chatHistory, sessionId = "default", userId 
             color: '#e5e7eb',
             margin: 0
           }}>
-            📝 AI 回答建议
+            🤖 AI助手回答
           </h3>
           <button
             onClick={handleGetSuggestion}
@@ -91,6 +99,29 @@ export default function RightPanel({ chatHistory, sessionId = "default", userId 
             {isLoading ? '生成中...' : '生成建议'}
           </button>
         </div>
+        {agentReply && (
+          <div style={{
+            marginBottom: '1rem',
+            padding: '0.75rem',
+            background: 'rgba(59, 130, 246, 0.1)',
+            borderRadius: '0.5rem',
+            border: '1px solid rgba(59, 130, 246, 0.3)'
+          }}>
+            <div style={{
+              fontSize: '0.75rem',
+              color: '#9ca3af',
+              marginBottom: '0.25rem'
+            }}>
+              您的问题：
+            </div>
+            <div style={{
+              fontSize: '0.875rem',
+              color: '#e5e7eb'
+            }}>
+              {agentReply.question}
+            </div>
+          </div>
+        )}
         <div className="gpt-content">
           {isLoading ? (
             <div style={{ 

@@ -5,9 +5,10 @@ import { getChatHistory, type ChatMessage as ApiChatMessage } from "../api/apiCl
 
 interface Props {
   sessionId?: string;
+  userId?: string;
 }
 
-export default function Layout({ sessionId = "default" }: Props) {
+export default function Layout({ sessionId = "default", userId }: Props) {
   const [activePanel, setActivePanel] = useState<'left' | 'right'>('left');
   const [chatHistory, setChatHistory] = useState<Array<{
     id: string;
@@ -16,6 +17,7 @@ export default function Layout({ sessionId = "default" }: Props) {
     timestamp: string;
     isPartial?: boolean;
   }>>([]);
+  const [agentReply, setAgentReply] = useState<{ question: string; reply: string } | null>(null);
   
   // 部分结果临时存储（用于更新）
   const partialResultsRef = useRef<Map<string, number>>(new Map());
@@ -127,6 +129,13 @@ export default function Layout({ sessionId = "default" }: Props) {
     }
   };
 
+  // 处理Agent回答
+  const handleAgentReply = (question: string, reply: string) => {
+    setAgentReply({ question, reply });
+    // 自动切换到右侧面板显示回答
+    setActivePanel('right');
+  };
+
   return (
     <div className="app-container">
       {/* 应用头部 */}
@@ -165,13 +174,17 @@ export default function Layout({ sessionId = "default" }: Props) {
             chatHistory={chatHistory}
             onUserText={handleUserText}
             onInterviewerText={handleInterviewerText}
+            onAgentReply={handleAgentReply}
             sessionId={sessionId}
+            userId={userId}
           />
         </div>
         <div className={`right-panel ${activePanel === 'right' ? 'active' : ''}`}>
           <RightPanel 
             chatHistory={chatHistory}
             sessionId={sessionId}
+            userId={userId}
+            agentReply={agentReply}
           />
         </div>
       </main>
