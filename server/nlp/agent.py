@@ -102,7 +102,11 @@ class InterviewAssistantAgent:
         # 并行获取CV和岗位信息
         tasks = []
         if user_id:
+            logger.info(f"开始获取CV信息，user_id: {user_id}")
             tasks.append(("cv", cv_dao.get_cv_by_user_id(user_id)))
+        else:
+            logger.info("未提供user_id，尝试获取默认CV（第一个用户的CV）")
+            tasks.append(("cv", cv_dao.get_default_cv()))
         tasks.append(("job", job_position_dao.get_job_position_by_session(session_id)))
         
         # 获取对话历史（同步方法）
@@ -121,6 +125,10 @@ class InterviewAssistantAgent:
                 else:
                     if key == "cv":
                         cv_info = result
+                        if cv_info:
+                            logger.info(f"成功获取CV信息，content长度: {len(cv_info.get('content', ''))}")
+                        else:
+                            logger.warning(f"CV信息为空，user_id: {user_id}")
                     elif key == "job":
                         job_info = result
         
@@ -173,7 +181,13 @@ class InterviewAssistantAgent:
         if cv_info:
             cv_content = cv_info.get('content', '')
             if cv_content:
-                cv_text = cv_content[:500] + "..." if len(cv_content) > 500 else cv_content
+                # 保留更多内容，不要截断太短
+                cv_text = cv_content[:2000] + "..." if len(cv_content) > 2000 else cv_content
+                logger.info(f"格式化CV信息，长度: {len(cv_text)}")
+            else:
+                logger.warning("CV信息存在但content字段为空")
+        else:
+            logger.warning("cv_info为None，无法使用简历信息")
         
         return {
             "cv": cv_text,

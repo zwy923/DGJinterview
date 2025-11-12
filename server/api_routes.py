@@ -48,9 +48,13 @@ async def ask_gpt(request: GPTRequest):
         # 并行获取所有数据源
         tasks = []
         
-        # 1. 获取CV信息（如果有user_id）
+        # 1. 获取CV信息（如果有user_id则按user_id获取，否则获取默认CV）
         if request.user_id:
+            logger.info(f"[/gpt] 开始获取CV信息，user_id: {request.user_id}")
             tasks.append(("cv", cv_dao.get_cv_by_user_id(request.user_id)))
+        else:
+            logger.info("[/gpt] 未提供user_id，尝试获取默认CV（第一个用户的CV）")
+            tasks.append(("cv", cv_dao.get_default_cv()))
         
         # 2. 获取岗位信息（如果有session_id）
         if request.session_id:
@@ -125,11 +129,15 @@ async def ask_gpt(request: GPTRequest):
         
         # 添加CV信息
         if cv_info and cv_info.get('content'):
-            cv_content = _sanitize_content(cv_info['content'], max_length=500)
+            # 增加CV内容长度限制，保留更多信息
+            cv_content = _sanitize_content(cv_info['content'], max_length=2000)
             if cv_content:
                 enhanced_prompt_parts.append("【简历摘要】")
                 enhanced_prompt_parts.append(cv_content)
                 enhanced_prompt_parts.append("")
+                logger.info(f"[/gpt] 已将CV信息添加到prompt，长度: {len(cv_content)}")
+        else:
+            logger.warning("[/gpt] 未添加CV信息到prompt（cv_info为空或content为空）")
         
         # 添加岗位信息
         if job_info:

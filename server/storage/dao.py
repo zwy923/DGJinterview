@@ -382,6 +382,85 @@ class CVDAO:
             logger.error(f"保存CV失败: {e}")
             return 0
     
+    async def get_default_cv(self, auto_generate_embedding: bool = True) -> Optional[Dict[str, Any]]:
+        """
+        获取默认CV（第一个用户的CV，按创建时间排序）
+        
+        Args:
+            auto_generate_embedding: 如果embedding为空且API密钥已配置，是否自动生成
+        
+        Returns:
+            CV信息或None
+        """
+        if not pg_pool.pool:
+            return None
+        
+        try:
+            # 先尝试查询embedding字段（检查pgvector是否可用）
+            has_embedding = False
+            try:
+                query_with_embedding = """
+                    SELECT id, user_id, content, metadata, created_at, updated_at,
+                           CASE WHEN embedding IS NULL THEN NULL ELSE 'has_embedding' END as has_embedding
+                    FROM cvs
+                    ORDER BY created_at ASC
+                    LIMIT 1
+                """
+                row = await pg_pool.fetchrow(query_with_embedding)
+                if row:
+                    result = dict(row)
+                    has_embedding = result.pop('has_embedding') is not None
+                else:
+                    return None
+            except Exception as e:
+                # 如果embedding字段不存在（pgvector未安装），使用基础查询
+                logger.debug(f"embedding字段不可用，使用基础查询: {e}")
+                query = """
+                    SELECT id, user_id, content, metadata, created_at, updated_at
+                    FROM cvs
+                    ORDER BY created_at ASC
+                    LIMIT 1
+                """
+                row = await pg_pool.fetchrow(query)
+                if not row:
+                    return None
+                result = dict(row)
+                has_embedding = False  # 没有embedding字段，标记为False
+            
+            # 将metadata从JSON字符串转换为字典
+            if result.get('metadata') and isinstance(result['metadata'], str):
+                result['metadata'] = json.loads(result['metadata'])
+            elif result.get('metadata') is None:
+                result['metadata'] = None
+            
+            # 将datetime对象转换为ISO格式字符串
+            if result.get('created_at') and hasattr(result['created_at'], 'isoformat'):
+                result['created_at'] = result['created_at'].isoformat()
+            elif result.get('created_at') is None:
+                result['created_at'] = None
+            
+            if result.get('updated_at') and hasattr(result['updated_at'], 'isoformat'):
+                result['updated_at'] = result['updated_at'].isoformat()
+            elif result.get('updated_at') is None:
+                result['updated_at'] = None
+            
+            # 自动生成embedding（如果需要）
+            if auto_generate_embedding and not has_embedding and result.get('content'):
+                try:
+                    from utils.embedding import embedding_service
+                    if embedding_service.api_key:
+                        # 异步生成embedding并更新（不阻塞当前请求）
+                        import asyncio
+                        asyncio.create_task(self._update_cv_embedding(result['user_id'], result['content']))
+                        logger.info(f"检测到CV缺少embedding，正在后台生成并更新: user_id={result['user_id']}")
+                except Exception as e:
+                    logger.warning(f"自动生成CV embedding失败: {e}")
+            
+            return result
+        except Exception as e:
+            logger.error(f"获取默认CV失败: {e}")
+            return None
+    
     async def get_cv_by_user_id(self, user_id: str, auto_generate_embedding: bool = True) -> Optional[Dict[str, Any]]:
         """
         获取用户CV
