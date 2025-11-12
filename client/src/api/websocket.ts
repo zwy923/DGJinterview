@@ -4,10 +4,17 @@
  */
 
 export interface WSMessage {
-  type: "info" | "final" | "partial" | "error";
-  seq: number;
-  text: string;
+  type: "info" | "final" | "partial" | "error" | "stream";
+  seq?: number;
+  text?: string;
   confidence?: number;
+  role?: "assistant" | "user" | "interviewer";
+  delta?: string; // 流式增量内容
+  done?: boolean; // 流式完成标志
+  speaker?: "user" | "interviewer";
+  start_time?: number;
+  end_time?: number;
+  timestamp?: string;
 }
 
 export interface WSMessageHandler {
@@ -44,24 +51,24 @@ export function connectASRWebSocket(
       
       switch (msg.type) {
         case "final":
-          if (handlers.onFinal) {
-            handlers.onFinal(msg.text, msg.seq, msg.confidence);
+          if (handlers.onFinal && msg.text) {
+            handlers.onFinal(msg.text, msg.seq || 0, msg.confidence);
           }
           break;
         case "partial":
-          if (handlers.onPartial) {
-            handlers.onPartial(msg.text, msg.seq);
+          if (handlers.onPartial && msg.text) {
+            handlers.onPartial(msg.text, msg.seq || 0);
           }
           break;
         case "info":
-          if (handlers.onInfo) {
-            handlers.onInfo(msg.text, msg.seq);
+          if (handlers.onInfo && msg.text) {
+            handlers.onInfo(msg.text, msg.seq || 0);
           }
           console.log(`[${source}] Info:`, msg.text);
           break;
         case "error":
-          if (handlers.onError) {
-            handlers.onError(msg.text, msg.seq);
+          if (handlers.onError && msg.text) {
+            handlers.onError(msg.text, msg.seq || 0);
           }
           console.error(`[${source}] Error:`, msg.text);
           break;

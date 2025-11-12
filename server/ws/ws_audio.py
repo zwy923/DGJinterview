@@ -11,7 +11,7 @@ from datetime import datetime
 import numpy as np
 from fastapi import WebSocket, WebSocketDisconnect
 
-from asr.session import SessionState
+from core.state import SessionState
 from asr.pipeline import ASRPipeline
 from storage.dao import transcript_dao
 from utils.schemas import ChatMessage
@@ -303,4 +303,3 @@ def stop_system_audio_capture():
         _stop()
     except Exception as e:
         logger.error(f"停止系统音频失败: {e}")
-

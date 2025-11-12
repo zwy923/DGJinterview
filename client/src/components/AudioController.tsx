@@ -5,8 +5,8 @@ import AudioLevelMeter from "./AudioLevelMeter";
 import { AudioWorkletManager } from "../audio/audioWorkletManager";
 
 interface Props {
-  onUserText: (text: string) => void;
-  onInterviewerText: (text: string) => void;
+  onUserText: (text: string, isPartial?: boolean) => void;
+  onInterviewerText: (text: string, isPartial?: boolean) => void;
   sessionId?: string; // 会话ID
 }
 

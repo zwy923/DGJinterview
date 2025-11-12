@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import LeftPanel from "./LeftPanel";
 import RightPanel from "./RightPanel";
+import AudioController from "./AudioController";
 import { getChatHistory, type ChatMessage as ApiChatMessage } from "../api/apiClient";
 
 interface Props {
@@ -177,6 +178,11 @@ export default function Layout({ sessionId = "default", userId }: Props) {
             onAgentReply={handleAgentReply}
             sessionId={sessionId}
             userId={userId}
+          />
+          <AudioController
+            onUserText={handleUserText}
+            onInterviewerText={handleInterviewerText}
+            sessionId={sessionId}
           />
         </div>
         <div className={`right-panel ${activePanel === 'right' ? 'active' : ''}`}>

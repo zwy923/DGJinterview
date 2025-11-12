@@ -8,7 +8,7 @@ import numpy as np
 from concurrent.futures import ThreadPoolExecutor
 
 from asr.engine import get_asr_engine
-from asr.session import SessionState
+from core.state import SessionState
 from asr.postprocess import get_postprocessor
 from config import settings
 from logs import setup_logger, log_metric

@@ -33,51 +33,6 @@ class ChatHistoryResponse(BaseModel):
 
 
 # =====================================================
-# GPT / 分析模型
-# =====================================================
-
-class GPTRequest(BaseModel):
-    """GPT 生成请求"""
-    prompt: str
-    stream: bool = Field(False, description="是否流式返回")
-    temperature: Optional[float] = Field(None, description="温度参数")
-    max_tokens: Optional[int] = Field(None, description="最大token数")
-    session_id: Optional[str] = Field(None, description="会话ID（用于获取岗位信息、知识库、对话历史）")
-    user_id: Optional[str] = Field(None, description="用户ID（用于获取CV）")
-    use_rag: bool = Field(True, description="是否使用RAG检索增强上下文")
-    brief: bool = Field(True, description="是否快答（一句话回答）")
-    selected_messages: Optional[List[str]] = Field(None, description="选中的消息ID列表（用于回答功能）")
-
-
-class GPTResponse(BaseModel):
-    """GPT 回复"""
-    reply: str
-    usage: Optional[Dict[str, int]] = Field(None, description="Token使用情况")
-
-
-class GPTStreamChunk(BaseModel):
-    """GPT 流式响应块"""
-    content: str
-    done: bool = Field(False, description="是否完成")
-    usage: Optional[Dict[str, int]] = Field(None, description="Token使用情况")
-
-
-class InterviewAnalysisRequest(BaseModel):
-    """面试分析请求"""
-    type: str
-    data: dict
-    session_id: str = Field(..., description="会话ID")
-
-
-class InterviewAnalysisResponse(BaseModel):
-    """面试分析响应"""
-    analysis: Dict[str, Any]
-    summary: str
-    recommendations: List[str]
-    score: Optional[float] = Field(None, description="综合评分（0-100）")
-
-
-# =====================================================
 # WebSocket消息模型
 # =====================================================
 
@@ -122,31 +77,6 @@ class WSErrorMessage(BaseModel):
     seq: int
     text: str
     code: Optional[str] = None
-
-
-# =====================================================
-# RAG相关模型
-# =====================================================
-
-class RAGQuery(BaseModel):
-    """RAG查询请求"""
-    query: str
-    top_k: int = Field(5, description="返回top-k结果")
-    rerank: bool = Field(True, description="是否重排序")
-
-
-class RAGResult(BaseModel):
-    """RAG查询结果"""
-    content: str
-    score: float
-    metadata: Optional[Dict[str, Any]] = None
-
-
-class RAGResponse(BaseModel):
-    """RAG响应"""
-    results: List[RAGResult]
-    query: str
-    total: int
 
 
 # =====================================================
@@ -233,18 +163,3 @@ class KnowledgeBaseResponse(BaseModel):
     created_at: Optional[str] = None
 
 
-# =====================================================
-# Agent相关模型
-# =====================================================
-
-class AgentSuggestRequest(BaseModel):
-    """Agent建议请求"""
-    session_id: str
-    user_id: Optional[str] = None
-
-
-class AgentSuggestResponse(BaseModel):
-    """Agent建议响应"""
-    suggestion: Optional[str] = None
-    success: bool
-    message: Optional[str] = None

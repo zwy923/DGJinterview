@@ -17,7 +17,7 @@ interface Props {
   onInterviewerText: (text: string) => void;
   onAgentReply?: (question: string, reply: string) => void;
   sessionId?: string;
-  userId?: string;
+  userId?: string; // 保留以兼容，但当前不使用
 }
 
 export default function LeftPanel({ 
@@ -26,7 +26,7 @@ export default function LeftPanel({
   onInterviewerText,
   onAgentReply,
   sessionId = "default",
-  userId
+  userId: _userId // 保留以兼容，但当前不使用
 }: Props) {
   const [questionText, setQuestionText] = useState("");
   const [isAskingAgent, setIsAskingAgent] = useState(false);
@@ -75,17 +75,12 @@ export default function LeftPanel({
     setIsAskingAgent(true);
     
     try {
-      const prompt = userQuestion;
-      
       // 流式响应：实时更新回答（快答）
       let fullReply = "";
       
-      const reply = await askGPT(prompt, {
+      const reply = await askGPT(userQuestion, {
         sessionId: sessionId,
-        userId: userId,
-        useRag: true,
-        brief: true, // 快答
-        stream: true,
+        brief: true, // 快答模式
         onChunk: (chunk: string) => {
           fullReply += chunk;
           if (onAgentReply) {
@@ -129,22 +124,15 @@ export default function LeftPanel({
         return;
       }
       
-      // 使用选中的消息的timestamp作为ID（后端使用timestamp匹配）
-      const selectedTimestamps = interviewerMsgs.map(msg => msg.timestamp);
+      // 合并选中的面试官消息作为问题
       const question = interviewerMsgs.map(msg => msg.content).join('；');
-      
-      const prompt = `请帮我回答以下问题：${question}`;
       
       // 流式响应：实时更新回答（正常回答，不是快答）
       let fullReply = "";
       
-      const reply = await askGPT(prompt, {
+      const reply = await askGPT(question, {
         sessionId: sessionId,
-        userId: userId,
-        useRag: true,
         brief: false, // 正常回答，不是快答
-        selectedMessages: selectedTimestamps, // 传递timestamp而不是id
-        stream: true,
         onChunk: (chunk: string) => {
           fullReply += chunk;
           if (onAgentReply) {

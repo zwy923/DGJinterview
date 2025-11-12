@@ -11,7 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from config import settings
 from logs import setup_logger
 from storage.pg import pg_pool
-from gateway.ws_audio import handle_audio_websocket
+from ws.ws_audio import handle_audio_websocket
 from api_routes import router
 
 logger = setup_logger(__name__)
@@ -27,40 +27,10 @@ async def lifespan(app: FastAPI):
     if settings.PG_ENABLED:
         await pg_pool.initialize()
         if pg_pool.pool:
-            # 检查RAG是否可用（需要pgvector和Embedding API）
-            from utils.embedding import embedding_service
-            has_embedding_api = bool(embedding_service.api_key)
-            has_pgvector = pg_pool.vector_available
-            
-            # 调试信息（使用INFO级别，确保能看到）
-            logger.info(f"RAG配置检查: RAG_ENABLED={settings.RAG_ENABLED}, has_embedding_api={has_embedding_api}, has_pgvector={has_pgvector}")
-            
-            if settings.RAG_ENABLED:
-                if has_embedding_api and has_pgvector:
-                    logger.info("PostgreSQL已初始化，RAG功能可用")
-                elif not has_embedding_api:
-                    logger.warning("RAG已启用但Embedding API密钥未配置，RAG功能将不可用")
-                elif not has_pgvector:
-                    logger.warning("RAG已启用但pgvector扩展不可用，RAG功能将不可用")
-            else:
-                logger.info("PostgreSQL已初始化（RAG未启用，仅用于数据存储）")
+            logger.info("PostgreSQL已初始化（仅用于数据存储）")
         else:
             logger.warning("PostgreSQL未初始化，以下功能将不可用：")
-            logger.warning("  - CV保存/读取")
-            logger.warning("  - 对话记录持久化")
-            logger.warning("  - 岗位信息管理")
-            logger.warning("  - 知识库管理")
-            if settings.RAG_ENABLED:
-                logger.warning("  - RAG向量检索功能")
-            logger.warning("请检查PostgreSQL配置和服务状态")
-    
-    # 预热Agent Chain（优化①）
-    try:
-        from nlp.agent import interview_agent
-        await interview_agent.preload()
-        logger.info("✅ Agent Chain预热完成")
-    except Exception as e:
-        logger.warning(f"Agent Chain预热失败: {e}")
+
     
     yield
     
@@ -68,14 +38,6 @@ async def lifespan(app: FastAPI):
     logger.info("🛑 关闭应用...")
     if pg_pool.pool:  # 如果已初始化，则关闭
         await pg_pool.close()
-    
-    # 关闭 LLM API 连接
-    from nlp.llm_api import llm_api
-    await llm_api.close()
-    
-    # 关闭 Redis 连接
-    from utils.redis_client import close_redis
-    await close_redis()
 
 
 # 创建FastAPI应用
@@ -97,6 +59,10 @@ app.add_middleware(
 # 注册API路由
 app.include_router(router, prefix="/api")
 
+# 注册GPT端点
+from api.gpt_endpoints import router as gpt_router
+app.include_router(gpt_router)
+
 # WebSocket路由：/ws/audio/{session_id}/{source}
 @app.websocket("/ws/audio/{session_id}/{source}")
 async def ws_audio(ws: WebSocket, session_id: str, source: str):
@@ -113,6 +79,13 @@ async def ws_audio(ws: WebSocket, session_id: str, source: str):
     
     await handle_audio_websocket(ws, session_id, source)
 
+
+# WebSocket Agent路由：/ws/agent/{session_id}
+from ws.ws_agent import handle_agent_websocket
+@app.websocket("/ws/agent/{session_id}")
+async def ws_agent(ws: WebSocket, session_id: str):
+    """Agent WebSocket端点"""
+    await handle_agent_websocket(ws, session_id)
 
 # 兼容旧的路由（向后兼容）
 @app.websocket("/ws/transcribe")
@@ -137,8 +110,7 @@ async def health():
     """健康检查端点"""
     return {
         "status": "healthy",
-        "model": "loaded",
-        "rag_enabled": settings.RAG_ENABLED
+        "model": "loaded"
     }
 
 

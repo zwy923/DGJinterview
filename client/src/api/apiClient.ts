@@ -272,121 +272,100 @@ export async function getAgentSuggestion(
 }
 
 // =====================================================
-// GPT 相关 API
+// GPT 相关 API（新版本：支持SSE流式响应）
 // =====================================================
 
 export interface GPTRequest {
-  prompt: string;
-  stream?: boolean;
-  temperature?: number;
-  max_tokens?: number;
-}
-
-export interface GPTResponse {
-  reply: string;
-  usage?: {
-    prompt_tokens?: number;
-    completion_tokens?: number;
-    total_tokens?: number;
-  };
+  text: string;
+  session_id?: string;
 }
 
 /**
- * 调用 GPT API（增强版：支持CV、知识库、岗位信息、RAG）
- * 支持流式响应
+ * 调用 GPT API（SSE流式响应）
+ * 
+ * @param question 问题文本
+ * @param options 选项
+ * @returns Promise<string> 完整回答
  */
 export async function askGPT(
-  prompt: string,
+  question: string,
   options?: {
-    stream?: boolean;
     sessionId?: string;
-    userId?: string;
-    useRag?: boolean;
-    brief?: boolean;
-    selectedMessages?: string[];
+    brief?: boolean; // true=快答，false=正常模式
     onChunk?: (chunk: string) => void;
   }
 ): Promise<string> {
-  const shouldStream = options?.stream !== false; // 默认启用流式
+  const baseUrl = `http://${window.location.hostname}:8000`;
+  const brief = options?.brief !== false; // 默认快答
+  const url = `${baseUrl}/api/gpt?brief=${brief}`;
   
-  if (shouldStream && options?.onChunk) {
-    // 流式响应
-    const url = `${API_BASE_URL}/gpt`;
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        prompt,
-        stream: true,
-        session_id: options?.sessionId,
-        user_id: options?.userId,
-        use_rag: options?.useRag !== false,
-        brief: options?.brief !== false, // 默认快答
-        selected_messages: options?.selectedMessages,
-      }),
-    });
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      text: question,
+      session_id: options?.sessionId,
+    }),
+  });
 
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({ error: response.statusText }));
-      throw new Error(errorData.error || errorData.message || `HTTP ${response.status}`);
-    }
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({ error: response.statusText }));
+    throw new Error(errorData.detail || errorData.error || errorData.message || `HTTP ${response.status}`);
+  }
 
-    const reader = response.body?.getReader();
-    const decoder = new TextDecoder();
-    let fullContent = '';
+  // SSE流式响应
+  const reader = response.body?.getReader();
+  const decoder = new TextDecoder();
+  let fullContent = '';
 
-    if (!reader) {
-      throw new Error('无法读取响应流');
-    }
+  if (!reader) {
+    throw new Error('无法读取响应流');
+  }
 
-    try {
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
+  try {
+    let buffer = '';
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
 
-        const chunk = decoder.decode(value, { stream: true });
-        const lines = chunk.split('\n');
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || ''; // 保留最后不完整的行
 
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            try {
-              const data = JSON.parse(line.slice(6));
-              if (data.content) {
-                fullContent += data.content;
-                options.onChunk!(data.content);
+      for (const line of lines) {
+        if (line.startsWith('event: ')) {
+          // 事件类型
+          continue;
+        }
+        if (line.startsWith('data: ')) {
+          try {
+            const data = JSON.parse(line.slice(6));
+            if (data.content) {
+              fullContent += data.content;
+              if (options?.onChunk) {
+                options.onChunk(data.content);
               }
-              if (data.done || data.error) {
-                return fullContent;
-              }
-            } catch (e) {
-              // 忽略解析错误
             }
+            if (data.done) {
+              return fullContent;
+            }
+            if (data.error) {
+              throw new Error(data.error);
+            }
+          } catch (e) {
+            // 忽略JSON解析错误
+            console.warn('Failed to parse SSE data:', e, line);
           }
         }
       }
-    } finally {
-      reader.releaseLock();
     }
-
-    return fullContent;
-  } else {
-    // 非流式响应
-    const response = await request<GPTResponse>('/gpt', {
-      method: 'POST',
-      body: JSON.stringify({
-        prompt,
-        stream: false,
-        session_id: options?.sessionId,
-        user_id: options?.userId,
-        use_rag: options?.useRag !== false,
-        brief: options?.brief !== false, // 默认快答
-        selected_messages: options?.selectedMessages,
-      }),
-    });
-    return response.reply || '';
+  } finally {
+    reader.releaseLock();
   }
+
+  return fullContent;
 }
 
 // =====================================================

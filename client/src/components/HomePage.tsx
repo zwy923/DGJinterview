@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import CVManager from "./CVManager";
 import JobPositionManager from "./JobPositionManager";
 import KnowledgeBaseManager from "./KnowledgeBaseManager";
-import { saveJobPosition, saveKnowledgeBase } from "../api/apiClient";
+import { saveJobPosition } from "../api/apiClient";
 
 interface InterviewConfig {
   id: string;
@@ -26,8 +26,8 @@ export default function HomePage() {
     programmingLanguages: []
   });
   const [showCVManager, setShowCVManager] = useState(false);
+  const [showKnowledgeBaseManager, setShowKnowledgeBaseManager] = useState(false);
   const [userId] = useState("default_user"); // 可以从用户系统获取
-  const [tempKnowledgeBaseItems, setTempKnowledgeBaseItems] = useState<any[]>([]);
   const [jobPositionData, setJobPositionData] = useState<{ title: string; description?: string; requirements?: string } | null>(null);
 
   const handleLanguageToggle = (language: string) => {
@@ -75,26 +75,7 @@ export default function HomePage() {
       console.error("保存岗位信息失败:", error);
     }
 
-    // 保存知识库条目到后端（如果有添加）
-    if (tempKnowledgeBaseItems.length > 0) {
-      try {
-        await Promise.all(
-          tempKnowledgeBaseItems.map(item =>
-            saveKnowledgeBase({
-              session_id: newInterview.id,
-              title: item.title,
-              content: item.content,
-              metadata: item.metadata
-            })
-          )
-        );
-      } catch (error) {
-        console.error("保存知识库条目失败:", error);
-      }
-    }
-
     // 重置临时数据
-    setTempKnowledgeBaseItems([]);
     setJobPositionData(null);
 
     // 关闭模态框
@@ -170,6 +151,47 @@ export default function HomePage() {
           </div>
           {showCVManager && (
             <CVManager userId={userId} />
+          )}
+        </div>
+
+        {/* 知识库管理区域 */}
+        <div style={{
+          marginBottom: '2rem',
+          padding: '1.5rem',
+          background: 'rgba(0, 0, 0, 0.3)',
+          borderRadius: '1rem',
+          border: '1px solid rgba(255, 255, 255, 0.1)'
+        }}>
+          <div style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            marginBottom: '1rem'
+          }}>
+            <h2 style={{ margin: 0, fontSize: '1.25rem', color: '#e5e7eb' }}>📚 知识库管理</h2>
+            <button
+              onClick={() => setShowKnowledgeBaseManager(!showKnowledgeBaseManager)}
+              style={{
+                padding: '0.5rem 1rem',
+                borderRadius: '0.5rem',
+                border: 'none',
+                background: showKnowledgeBaseManager 
+                  ? 'rgba(107, 114, 128, 0.5)' 
+                  : 'linear-gradient(135deg, #8b5cf6, #7c3aed)',
+                color: 'white',
+                cursor: 'pointer',
+                fontSize: '0.875rem',
+                fontWeight: '600'
+              }}
+            >
+              {showKnowledgeBaseManager ? '收起' : '管理知识库'}
+            </button>
+          </div>
+          {showKnowledgeBaseManager && (
+            <KnowledgeBaseManager 
+              sessionId="global" 
+              isTemporary={false}
+            />
           )}
         </div>
 
@@ -254,7 +276,6 @@ export default function HomePage() {
                     programmingLanguages: []
                   });
                   setJobPositionData(null);
-                  setTempKnowledgeBaseItems([]);
                 }}
               >
                 ✕
@@ -299,24 +320,6 @@ export default function HomePage() {
                 </div>
               </div>
 
-              {/* 知识库管理 */}
-              <div className="form-section">
-                <label className="form-label">知识库管理（可选）</label>
-                <div style={{
-                  padding: '1rem',
-                  background: 'rgba(0, 0, 0, 0.2)',
-                  borderRadius: '0.5rem',
-                  border: '1px solid rgba(255, 255, 255, 0.1)',
-                  maxHeight: '300px',
-                  overflowY: 'auto'
-                }}>
-                  <KnowledgeBaseManager 
-                    sessionId="temp"
-                    isTemporary={true}
-                    onItemsChange={setTempKnowledgeBaseItems}
-                  />
-                </div>
-              </div>
             </div>
 
             <div className="modal-footer">
@@ -329,7 +332,6 @@ export default function HomePage() {
                     programmingLanguages: []
                   });
                   setJobPositionData(null);
-                  setTempKnowledgeBaseItems([]);
                 }}
               >
                 取消
