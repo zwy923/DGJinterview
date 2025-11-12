@@ -16,6 +16,7 @@ from asr.pipeline import ASRPipeline
 from storage.dao import transcript_dao
 from utils.schemas import ChatMessage
 from utils.websocket_tools import send_json
+from utils.embedding import embedding_service
 from config import settings
 import struct
 from logs import setup_logger, metrics
@@ -102,6 +103,31 @@ async def handle_audio_websocket(ws: WebSocket, session_id: str, source: str):
             )
         except Exception as e:
             logger.error(f"保存transcript失败: {e}")
+        
+        # 异步生成向量并存入内存（不阻塞主流程）
+        async def vectorize_and_store():
+            """后台任务：生成向量并存入内存"""
+            try:
+                embedding = await embedding_service.generate_embedding(text)
+                if embedding is not None:
+                    # 存入内存历史
+                    state.add_to_history(
+                        content=text,
+                        speaker=speaker,
+                        embedding=embedding,
+                        metadata={
+                            "start_time": start_time,
+                            "end_time": end_time,
+                            "session_id": session_id
+                        },
+                        timestamp=timestamp
+                    )
+                    logger.debug(f"[VECTORIZE] 已向量化并存入内存: {text[:50]}...")
+            except Exception as e:
+                logger.error(f"向量化失败: {e}")
+        
+        # 创建后台任务（不等待完成）
+        asyncio.create_task(vectorize_and_store())
         
         # 发送WebSocket消息（带时间戳和说话人标签）
         await send_json(ws, {

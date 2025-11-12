@@ -23,7 +23,7 @@ class Settings(BaseSettings):
     ASR_MODEL: str = "paraformer-zh"
     ASR_VAD_MODEL: str = "fsmn-vad"
     ASR_PUNC_MODEL: str = "ct-punc"
-    ASR_DEVICE: str = os.getenv("ASR_DEVICE", "cpu")  # cpu or cuda
+    ASR_DEVICE: str = os.getenv("ASR_DEVICE", "cuda")  # cpu or cuda（如果系统没有CUDA，使用cpu）
     ASR_SAMPLE_RATE: int = 16000
     
     # ASR 后处理配置
@@ -31,7 +31,7 @@ class Settings(BaseSettings):
     ASR_ENABLE_NUMBER_NORMALIZATION: bool = os.getenv("ASR_ENABLE_NUMBER_NORMALIZATION", "true").lower() == "true"
     ASR_ENABLE_REPEAT_REMOVAL: bool = os.getenv("ASR_ENABLE_REPEAT_REMOVAL", "true").lower() == "true"
     ASR_ENABLE_PUNCTUATION_CORRECTION: bool = os.getenv("ASR_ENABLE_PUNCTUATION_CORRECTION", "true").lower() == "true"
-    ASR_MIN_SENTENCE_LENGTH: int = int(os.getenv("ASR_MIN_SENTENCE_LENGTH", "3"))  # 最小句子长度（字符数）
+    ASR_MIN_SENTENCE_LENGTH: int = int(os.getenv("ASR_MIN_SENTENCE_LENGTH", "6"))  # 最小句子长度（字符数），过滤短碎片
     
     # 语言路由配置（预留）
     ASR_ENABLE_LANG_ID: bool = os.getenv("ASR_ENABLE_LANG_ID", "false").lower() == "true"
@@ -42,19 +42,19 @@ class Settings(BaseSettings):
     WS_TIMEOUT: int = 300
     
     # 音频配置
-    AUDIO_CHUNK_SIZE: int = 1600  # 100ms @ 16kHz（平衡延迟和稳定性）
-    AUDIO_NOISE_DECAY: float = 0.992  # 噪声水平衰减系数（稍微加快适应，提高准确性）
+    AUDIO_CHUNK_SIZE: int = 3200  # 200ms @ 16kHz（FunASR最佳帧长，减少碎片化识别）
+    AUDIO_NOISE_DECAY: float = 0.997  # 噪声水平衰减系数（稳定噪声估计，避免过于灵敏）
     
     # VAD 端点检测配置（三段式）- 优化为准确性和速度平衡
     VAD_PRE_SPEECH_PADDING: float = 0.15  # 前置缓冲 150ms（减少延迟）
-    VAD_END_SILENCE: float = 0.7  # 尾静音 700ms（平衡响应速度和准确性）
+    VAD_END_SILENCE: float = 1.2  # 尾静音 1200ms（更自然地一整句输出，避免被呼吸声或顿音误判）
     VAD_MAX_SEGMENT: float = 10.0  # 最大段长 10s（防止过长导致延迟）
     
     # 流式识别配置
-    PARTIAL_INTERVAL: float = 0.15  # 部分结果产出间隔 150ms（更流畅的实时反馈）
+    PARTIAL_INTERVAL: float = 0.4  # 部分结果产出间隔 400ms（避免UI抖动，更自然的更新频率）
     
     # WebSocket 背压配置
-    WS_AUDIO_QUEUE_MAX_SIZE: int = 96  # 队列上限（约 1.5-2s 音频，降低延迟）
+    WS_AUDIO_QUEUE_MAX_SIZE: int = 12  # 队列上限（约 2.4s 音频，配合chunk=3200使用）
     WS_AUDIO_QUEUE_DROP_OLDEST: bool = True  # 队列满时丢弃最旧
     
     # LLM配置
@@ -63,6 +63,15 @@ class Settings(BaseSettings):
     LLM_MODEL: str = os.getenv("LLM_MODEL", "gpt-3.5-turbo")
     LLM_TEMPERATURE: float = 0.7
     LLM_MAX_TOKENS: int = 2000
+    
+    # Embedding配置
+    EMBEDDING_MODEL: str = os.getenv("EMBEDDING_MODEL", "text-embedding-3-small")
+    EMBEDDING_API_KEY: Optional[str] = os.getenv("EMBEDDING_API_KEY")  # 可与LLM共用
+    EMBEDDING_BASE_URL: Optional[str] = os.getenv("EMBEDDING_BASE_URL")  # 默认使用LLM_BASE_URL
+    
+    # Agent配置
+    AGENT_TIMEOUT: float = float(os.getenv("AGENT_TIMEOUT", "0.2"))  # Agent超时时间（秒）
+    MEMORY_HISTORY_MAX_SIZE: int = int(os.getenv("MEMORY_HISTORY_MAX_SIZE", "1000"))  # 内存历史最大条数
     
     # PostgreSQL配置
     PG_HOST: str = os.getenv("PG_HOST", "localhost")

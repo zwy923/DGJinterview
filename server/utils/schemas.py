@@ -159,3 +159,87 @@ class SessionStats(BaseModel):
     duration_seconds: Optional[float] = None
     total_words: Optional[int] = None
 
+
+# =====================================================
+# CV相关模型
+# =====================================================
+
+class CVRequest(BaseModel):
+    """CV上传请求"""
+    user_id: str
+    content: str
+    metadata: Optional[Dict[str, Any]] = None
+
+
+class CVResponse(BaseModel):
+    """CV响应"""
+    id: int
+    user_id: str
+    content: str
+    metadata: Optional[Dict[str, Any]] = None
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+
+
+# =====================================================
+# 岗位信息相关模型
+# =====================================================
+
+class JobPositionRequest(BaseModel):
+    """岗位信息请求"""
+    session_id: str
+    title: str
+    description: Optional[str] = None
+    requirements: Optional[str] = None
+    metadata: Optional[Dict[str, Any]] = None
+
+
+class JobPositionResponse(BaseModel):
+    """岗位信息响应"""
+    id: int
+    session_id: str
+    title: str
+    description: Optional[str] = None
+    requirements: Optional[str] = None
+    metadata: Optional[Dict[str, Any]] = None
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+
+
+# =====================================================
+# 知识库相关模型
+# =====================================================
+
+class KnowledgeBaseRequest(BaseModel):
+    """知识库条目请求"""
+    session_id: Optional[str] = None
+    title: str
+    content: str
+    metadata: Optional[Dict[str, Any]] = None
+
+
+class KnowledgeBaseResponse(BaseModel):
+    """知识库条目响应"""
+    id: int
+    session_id: Optional[str] = None
+    title: str
+    content: str
+    metadata: Optional[Dict[str, Any]] = None
+    created_at: Optional[str] = None
+
+
+# =====================================================
+# Agent相关模型
+# =====================================================
+
+class AgentSuggestRequest(BaseModel):
+    """Agent建议请求"""
+    session_id: str
+    user_id: Optional[str] = None
+
+
+class AgentSuggestResponse(BaseModel):
+    """Agent建议响应"""
+    suggestion: Optional[str] = None
+    success: bool
+    message: Optional[str] = None

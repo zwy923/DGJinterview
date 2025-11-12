@@ -44,6 +44,10 @@ class SessionState:
         self.last_partial_time: float = 0
         self.partial_text: str = ""
         
+        # 内存对话历史（短期存储，带向量）
+        # 每个条目包含：content, speaker, timestamp, embedding, metadata
+        self.chat_history: List[Dict[str, Any]] = []
+        
         # 统计信息
         self.stats: Dict[str, Any] = {
             "start_time": datetime.now().isoformat(),
@@ -78,7 +82,64 @@ class SessionState:
             "duration_seconds": duration,
             "queue_size": self.audio_q.qsize(),
             "buffer_size": len(self.segment_buffer),
+            "chat_history_size": len(self.chat_history),
         }
+    
+    def add_to_history(
+        self,
+        content: str,
+        speaker: str,
+        embedding: Optional[np.ndarray] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        timestamp: Optional[str] = None
+    ):
+        """
+        添加对话到内存历史
+        
+        Args:
+            content: 对话内容
+            speaker: 说话者
+            embedding: 向量嵌入（可选）
+            metadata: 元数据（可选）
+            timestamp: 时间戳（可选，默认当前时间）
+        """
+        if not content or not content.strip():
+            return
+        
+        # 限制历史大小
+        max_size = settings.MEMORY_HISTORY_MAX_SIZE
+        if len(self.chat_history) >= max_size:
+            # 移除最旧的条目
+            self.chat_history.pop(0)
+        
+        entry = {
+            "content": content.strip(),
+            "speaker": speaker,
+            "timestamp": timestamp or datetime.now().isoformat(),
+            "embedding": embedding.tolist() if embedding is not None else None,
+            "metadata": metadata or {}
+        }
+        
+        self.chat_history.append(entry)
+    
+    def get_history_with_embeddings(self, limit: Optional[int] = None) -> List[Dict[str, Any]]:
+        """
+        获取带向量的对话历史（供Agent调用）
+        
+        Args:
+            limit: 返回数量限制（可选）
+        
+        Returns:
+            对话历史列表
+        """
+        history = self.chat_history
+        if limit is not None and limit > 0:
+            history = history[-limit:]
+        return history.copy()
+    
+    def clear_history(self):
+        """清空对话历史"""
+        self.chat_history.clear()
     
     def reset(self):
         """清空状态（可复用 Session）"""
@@ -93,6 +154,7 @@ class SessionState:
         self.asr_cache = {}
         self.last_partial_time = 0
         self.partial_text = ""
+        self.chat_history.clear()  # 清空对话历史
         self.stats = {
             "start_time": datetime.now().isoformat(),
             "audio_chunks_received": 0,

@@ -67,12 +67,41 @@ class PostgreSQLPool:
                 )
             """, settings.PG_VECTOR_DIM)
             
-            # 创建knowledge_base表
+            # 创建knowledge_base表（支持session隔离）
             await conn.execute("""
                 CREATE TABLE IF NOT EXISTS knowledge_base (
                     id SERIAL PRIMARY KEY,
+                    session_id VARCHAR(255),
                     title VARCHAR(255) NOT NULL,
                     content TEXT NOT NULL,
+                    embedding vector(%s),
+                    metadata JSONB,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """, settings.PG_VECTOR_DIM)
+            
+            # 创建cvs表
+            await conn.execute("""
+                CREATE TABLE IF NOT EXISTS cvs (
+                    id SERIAL PRIMARY KEY,
+                    user_id VARCHAR(255) NOT NULL UNIQUE,
+                    content TEXT NOT NULL,
+                    embedding vector(%s),
+                    metadata JSONB,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """, settings.PG_VECTOR_DIM)
+            
+            # 创建job_positions表
+            await conn.execute("""
+                CREATE TABLE IF NOT EXISTS job_positions (
+                    id SERIAL PRIMARY KEY,
+                    session_id VARCHAR(255) NOT NULL UNIQUE,
+                    title VARCHAR(255) NOT NULL,
+                    description TEXT,
+                    requirements TEXT,
                     embedding vector(%s),
                     metadata JSONB,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -94,6 +123,34 @@ class PostgreSQLPool:
             await conn.execute("""
                 CREATE INDEX IF NOT EXISTS knowledge_base_embedding_idx 
                 ON knowledge_base USING hnsw (embedding vector_cosine_ops)
+            """)
+            
+            # 为knowledge_base添加session_id索引
+            await conn.execute("""
+                CREATE INDEX IF NOT EXISTS knowledge_base_session_id_idx 
+                ON knowledge_base(session_id)
+            """)
+            
+            # 为cvs表创建索引
+            await conn.execute("""
+                CREATE INDEX IF NOT EXISTS cvs_user_id_idx 
+                ON cvs(user_id)
+            """)
+            
+            await conn.execute("""
+                CREATE INDEX IF NOT EXISTS cvs_embedding_idx 
+                ON cvs USING hnsw (embedding vector_cosine_ops)
+            """)
+            
+            # 为job_positions表创建索引
+            await conn.execute("""
+                CREATE INDEX IF NOT EXISTS job_positions_session_id_idx 
+                ON job_positions(session_id)
+            """)
+            
+            await conn.execute("""
+                CREATE INDEX IF NOT EXISTS job_positions_embedding_idx 
+                ON job_positions USING hnsw (embedding vector_cosine_ops)
             """)
             
             logger.info("数据库表结构创建完成")
