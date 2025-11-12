@@ -430,7 +430,7 @@ class LLMAPI:
     async def close(self):
         """关闭 HTTP 客户端连接"""
         if self._http_client:
-            await self._http_client.close()
+            await self._http_client.aclose()
 
 
 # 全局LLM API实例

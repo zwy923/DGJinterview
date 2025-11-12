@@ -208,7 +208,7 @@ async def ask_gpt(request: GPTRequest):
         enhanced_prompt_parts.append("【问题】")
         enhanced_prompt_parts.append(user_prompt)
         enhanced_prompt_parts.append("")
-        enhanced_prompt_parts.append("请基于以上简历、岗位信息和对话上下文，为面试者提供专业、简洁的回答建议。")
+        enhanced_prompt_parts.append("请基于以上简历、岗位信息和对话上下文，用一句话简洁回答。")
         
         enhanced_prompt = "\n".join(enhanced_prompt_parts)
         
