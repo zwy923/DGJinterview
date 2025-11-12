@@ -1,6 +1,7 @@
 """
 检索器：BM25+pgvector+重排+内存检索
 """
+import asyncio
 from typing import List, Optional
 import numpy as np
 
@@ -139,29 +140,53 @@ class RAGRetriever:
             相关对话片段列表
         """
         try:
+            # 检查 session_state
+            if not hasattr(session_state, "get_history_with_embeddings"):
+                logger.warning("SessionState未初始化embedding历史")
+                return []
+            
             # 生成查询向量
             query_embedding = await embedding_service.generate_embedding(query)
             if query_embedding is None:
                 return []
             
+            # 标准化查询向量
+            qe = np.array(query_embedding, dtype=np.float32)
+            qe_norm = np.linalg.norm(qe)
+            if qe_norm == 0:
+                logger.warning("查询向量为零向量")
+                return []
+            
             # 获取所有对话历史
             history = session_state.get_history_with_embeddings()
+            if not history:
+                return []
             
             # 计算相似度
             results = []
             for item in history:
-                if item.get('embedding') is None:
+                item_embedding = item.get('embedding')
+                if item_embedding is None:
                     continue
                 
-                item_embedding = np.array(item['embedding'])
+                # 标准化item向量
+                ie = np.array(item_embedding, dtype=np.float32)
+                ie_norm = np.linalg.norm(ie)
+                
+                # 检查零向量
+                if ie_norm == 0:
+                    continue
+                
                 # 计算余弦相似度
-                similarity = np.dot(query_embedding, item_embedding) / (
-                    np.linalg.norm(query_embedding) * np.linalg.norm(item_embedding)
-                )
+                similarity = float(np.dot(qe, ie) / (qe_norm * ie_norm))
+                
+                # 过滤负数相似度（噪声）
+                if similarity < 0:
+                    continue
                 
                 results.append({
                     **item,
-                    'similarity': float(similarity),
+                    'similarity': similarity,
                     'source': 'memory'
                 })
             
@@ -170,7 +195,7 @@ class RAGRetriever:
             
             return results[:top_k]
         except Exception as e:
-            logger.error(f"内存检索失败: {e}")
+            logger.exception(f"内存检索失败: {e}")
             return []
     
     async def retrieve_cv_and_job(
@@ -203,25 +228,24 @@ class RAGRetriever:
             if query_embedding is None:
                 return result
             
-            # 并行获取CV和岗位信息
+            # 并行获取CV和岗位信息（使用 asyncio.gather 确保所有任务都被等待）
             tasks = []
-            
             if user_id:
                 tasks.append(('cv', cv_dao.get_cv_by_user_id(user_id)))
-            
             tasks.append(('job', job_position_dao.get_job_position_by_session(session_id)))
             
-            # 执行任务
-            for key, task in tasks:
-                try:
-                    value = await task
-                    result[key] = value
-                except Exception as e:
-                    logger.error(f"获取{key}失败: {e}")
+            # 使用 gather 并发执行并捕获异常
+            if tasks:
+                results = await asyncio.gather(*[task[1] for task in tasks], return_exceptions=True)
+                for (key, _), value in zip(tasks, results):
+                    if isinstance(value, Exception):
+                        logger.warning(f"获取{key}失败: {value}")
+                    else:
+                        result[key] = value
             
             return result
         except Exception as e:
-            logger.error(f"检索CV和岗位信息失败: {e}")
+            logger.exception(f"检索CV和岗位信息失败: {e}")
             return result
 
 
