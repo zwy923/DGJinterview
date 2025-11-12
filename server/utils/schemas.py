@@ -42,6 +42,9 @@ class GPTRequest(BaseModel):
     stream: bool = Field(False, description="是否流式返回")
     temperature: Optional[float] = Field(None, description="温度参数")
     max_tokens: Optional[int] = Field(None, description="最大token数")
+    session_id: Optional[str] = Field(None, description="会话ID（用于获取岗位信息、知识库、对话历史）")
+    user_id: Optional[str] = Field(None, description="用户ID（用于获取CV）")
+    use_rag: bool = Field(True, description="是否使用RAG检索增强上下文")
 
 
 class GPTResponse(BaseModel):

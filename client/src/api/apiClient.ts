@@ -292,14 +292,25 @@ export interface GPTResponse {
 }
 
 /**
- * 调用 GPT API
+ * 调用 GPT API（增强版：支持CV、知识库、岗位信息、RAG）
  */
-export async function askGPT(prompt: string, stream: boolean = false): Promise<string> {
+export async function askGPT(
+  prompt: string,
+  options?: {
+    stream?: boolean;
+    sessionId?: string;
+    userId?: string;
+    useRag?: boolean;
+  }
+): Promise<string> {
   const response = await request<GPTResponse>('/gpt', {
     method: 'POST',
     body: JSON.stringify({
       prompt,
-      stream,
+      stream: options?.stream || false,
+      session_id: options?.sessionId,
+      user_id: options?.userId,
+      use_rag: options?.useRag !== false, // 默认启用RAG
     }),
   });
   return response.reply || '';

@@ -78,11 +78,18 @@ class Settings(BaseSettings):
     PG_PORT: int = int(os.getenv("PG_PORT", "5432"))
     PG_DB: str = os.getenv("PG_DB", "interview")
     PG_USER: str = os.getenv("PG_USER", "postgres")
-    PG_PASSWORD: str = os.getenv("PG_PASSWORD", "")
+    PG_PASSWORD: str = os.getenv("PG_PASSWORD", "0923")
     PG_VECTOR_DIM: int = 1536  # OpenAI embedding维度
+    PG_ENABLED: bool = os.getenv("PG_ENABLED", "true").lower() == "true"  # PostgreSQL是否启用（独立于RAG，用于CV、对话记录、岗位信息等存储）
     
     # RAG配置
-    RAG_ENABLED: bool = os.getenv("RAG_ENABLED", "false").lower() == "true"
+    # RAG是否启用：如果显式设置为true/false则使用，否则自动检测（需要PostgreSQL、pgvector和Embedding API）
+    _RAG_ENABLED_EXPLICIT = os.getenv("RAG_ENABLED")
+    if _RAG_ENABLED_EXPLICIT is not None:
+        RAG_ENABLED: bool = _RAG_ENABLED_EXPLICIT.lower() == "true"
+    else:
+        # 自动检测：如果有Embedding API密钥，则默认启用RAG
+        RAG_ENABLED: bool = bool(os.getenv("EMBEDDING_API_KEY") or os.getenv("LLM_API_KEY"))
     RAG_TOP_K: int = 5
     RAG_RERANK_TOP_K: int = 3
     

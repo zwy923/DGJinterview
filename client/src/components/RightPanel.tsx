@@ -36,7 +36,12 @@ export default function RightPanel({ chatHistory, sessionId = "default", userId 
       
       const prompt = `面试对话上下文：\n${context}\n\n请基于以上对话，为面试者提供回答建议和技巧，帮助优化回答质量。`;
       
-      const reply = await askGPT(prompt);
+      // 传递sessionId和userId，启用RAG增强
+      const reply = await askGPT(prompt, {
+        sessionId: sessionId,
+        userId: userId,
+        useRag: true
+      });
       setGptReply(reply);
     } catch (error) {
       console.error("GPT请求失败:", error);

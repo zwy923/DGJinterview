@@ -23,18 +23,43 @@ async def lifespan(app: FastAPI):
     # 启动时初始化
     logger.info("🚀 启动应用...")
     
-    # 初始化PostgreSQL（如果启用）
-    if settings.RAG_ENABLED:
-        try:
-            await pg_pool.initialize()
-        except Exception as e:
-            logger.error(f"PostgreSQL初始化失败: {e}")
+    # 初始化PostgreSQL（独立于RAG，用于CV、对话记录、岗位信息等存储）
+    if settings.PG_ENABLED:
+        await pg_pool.initialize()
+        if pg_pool.pool:
+            # 检查RAG是否可用（需要pgvector和Embedding API）
+            from utils.embedding import embedding_service
+            has_embedding_api = bool(embedding_service.api_key)
+            has_pgvector = pg_pool.vector_available
+            
+            if settings.RAG_ENABLED:
+                if has_embedding_api and has_pgvector:
+                    logger.info("PostgreSQL已初始化，RAG功能可用")
+                elif not has_embedding_api:
+                    logger.warning("RAG已启用但Embedding API密钥未配置，RAG功能将不可用")
+                elif not has_pgvector:
+                    logger.warning("RAG已启用但pgvector扩展不可用，RAG功能将不可用")
+            else:
+                if has_embedding_api and has_pgvector:
+                    logger.info("PostgreSQL已初始化（RAG未启用，仅用于数据存储）")
+                    logger.info("提示：已检测到Embedding API密钥和pgvector，如需启用RAG功能，请设置 RAG_ENABLED=true")
+                else:
+                    logger.info("PostgreSQL已初始化（RAG未启用，仅用于数据存储）")
+        else:
+            logger.warning("PostgreSQL未初始化，以下功能将不可用：")
+            logger.warning("  - CV保存/读取")
+            logger.warning("  - 对话记录持久化")
+            logger.warning("  - 岗位信息管理")
+            logger.warning("  - 知识库管理")
+            if settings.RAG_ENABLED:
+                logger.warning("  - RAG向量检索功能")
+            logger.warning("请检查PostgreSQL配置和服务状态")
     
     yield
     
     # 关闭时清理
     logger.info("🛑 关闭应用...")
-    if settings.RAG_ENABLED:
+    if pg_pool.pool:  # 如果已初始化，则关闭
         await pg_pool.close()
 
 

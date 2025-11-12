@@ -27,9 +27,124 @@ router = APIRouter()
 
 @router.post("/gpt", response_model=GPTResponse)
 async def ask_gpt(request: GPTRequest):
-    """GPT问答接口"""
+    """GPT问答接口（增强版：支持CV、知识库、岗位信息、RAG）"""
     try:
-        reply = await llm_api.generate(request.prompt, stream=request.stream)
+        from nlp.rag import rag_retriever
+        from gateway.ws_audio import _sessions
+        
+        # 构建增强的prompt
+        enhanced_prompt_parts = []
+        
+        # 1. 获取CV信息（如果有user_id）
+        cv_info = None
+        if request.user_id:
+            try:
+                cv_info = await cv_dao.get_cv_by_user_id(request.user_id)
+            except Exception as e:
+                logger.warning(f"获取CV失败: {e}")
+        
+        # 2. 获取岗位信息（如果有session_id）
+        job_info = None
+        if request.session_id:
+            try:
+                job_info = await job_position_dao.get_job_position_by_session(request.session_id)
+            except Exception as e:
+                logger.warning(f"获取岗位信息失败: {e}")
+        
+        # 3. 获取知识库条目（如果有session_id）
+        kb_items = []
+        if request.session_id:
+            try:
+                kb_items = await kb_dao.get_knowledge_by_session(request.session_id, limit=10)
+            except Exception as e:
+                logger.warning(f"获取知识库失败: {e}")
+        
+        # 4. RAG检索相关上下文（如果启用）
+        rag_context = []
+        if request.use_rag and request.session_id:
+            try:
+                # 获取会话状态（用于内存对话历史）
+                session_key = f"{request.session_id}_mic"
+                session_state = _sessions.get(session_key)
+                if not session_state:
+                    session_key = f"{request.session_id}_sys"
+                    session_state = _sessions.get(session_key)
+                
+                if session_state:
+                    # 从内存对话历史检索
+                    memory_results = await rag_retriever.retrieve_from_memory(
+                        session_state,
+                        request.prompt,
+                        top_k=3
+                    )
+                    rag_context.extend(memory_results)
+                
+                # 从PostgreSQL检索相关对话（如果RAG启用）
+                if rag_retriever.enabled:
+                    query_embedding = await embedding_service.generate_embedding(request.prompt)
+                    if query_embedding is not None:
+                        db_results = await rag_retriever.retrieve(
+                            query=request.prompt,
+                            query_embedding=query_embedding,
+                            session_id=request.session_id,
+                            top_k=3
+                        )
+                        rag_context.extend(db_results)
+            except Exception as e:
+                logger.warning(f"RAG检索失败: {e}")
+        
+        # 5. 构建增强的prompt
+        enhanced_prompt_parts.append("你是一位专业的面试助手。请根据以下信息为面试者提供回答建议和技巧。")
+        enhanced_prompt_parts.append("")
+        
+        # 添加CV信息
+        if cv_info and cv_info.get('content'):
+            cv_content = cv_info['content']
+            if len(cv_content) > 1000:
+                cv_content = cv_content[:1000] + "..."
+            enhanced_prompt_parts.append("【候选人简历】")
+            enhanced_prompt_parts.append(cv_content)
+            enhanced_prompt_parts.append("")
+        
+        # 添加岗位信息
+        if job_info:
+            enhanced_prompt_parts.append("【岗位信息】")
+            if job_info.get('title'):
+                enhanced_prompt_parts.append(f"岗位名称：{job_info['title']}")
+            if job_info.get('description'):
+                enhanced_prompt_parts.append(f"岗位描述：{job_info['description']}")
+            if job_info.get('requirements'):
+                enhanced_prompt_parts.append(f"岗位要求：{job_info['requirements']}")
+            enhanced_prompt_parts.append("")
+        
+        # 添加知识库信息
+        if kb_items:
+            enhanced_prompt_parts.append("【相关知识库】")
+            for item in kb_items[:5]:  # 最多5条
+                if item.get('title') and item.get('content'):
+                    enhanced_prompt_parts.append(f"- {item['title']}: {item['content'][:200]}")
+            enhanced_prompt_parts.append("")
+        
+        # 添加RAG检索的相关上下文
+        if rag_context:
+            enhanced_prompt_parts.append("【相关对话上下文】")
+            for item in rag_context[:3]:  # 最多3条
+                content = item.get('content', '')
+                if content:
+                    speaker = item.get('speaker', 'unknown')
+                    enhanced_prompt_parts.append(f"{speaker}: {content[:150]}")
+            enhanced_prompt_parts.append("")
+        
+        # 添加用户的问题/请求
+        enhanced_prompt_parts.append("【用户请求】")
+        enhanced_prompt_parts.append(request.prompt)
+        enhanced_prompt_parts.append("")
+        enhanced_prompt_parts.append("请基于以上信息，为面试者提供专业、实用的回答建议和技巧。")
+        
+        enhanced_prompt = "\n".join(enhanced_prompt_parts)
+        
+        # 调用LLM生成回复
+        reply = await llm_api.generate(enhanced_prompt, stream=request.stream)
         return GPTResponse(reply=reply)
     except Exception as e:
         logger.error(f"GPT问答失败: {e}")
@@ -149,6 +264,14 @@ async def save_cv_api(request: CVRequest):
         # 生成向量
         embedding = await embedding_service.generate_embedding(request.content)
         
+        # 检查PostgreSQL是否可用
+        from storage.pg import pg_pool
+        if not pg_pool.pool:
+            raise HTTPException(
+                status_code=503,
+                detail="PostgreSQL未连接，无法保存CV。请检查PostgreSQL服务是否运行，并查看服务器日志获取详细信息。"
+            )
+        
         # 保存CV
         cv_id = await cv_dao.save_cv(
             user_id=request.user_id,
@@ -158,7 +281,7 @@ async def save_cv_api(request: CVRequest):
         )
         
         if cv_id == 0:
-            raise HTTPException(status_code=500, detail="保存CV失败")
+            raise HTTPException(status_code=500, detail="保存CV失败（PostgreSQL可能未正确初始化）")
         
         # 获取保存的CV
         cv = await cv_dao.get_cv_by_user_id(request.user_id)
