@@ -131,7 +131,7 @@ export default function RightPanel({ agentReply }: Props) {
                   {/* 回答 */}
                   <div className="chat-message user-message">
                     <div className="message-bubble" style={{
-                      background: 'linear-gradient(135deg, #f59e0b, #d97706)',
+                      background: 'linear-gradient(135deg, #3b82f6, #2563eb)',
                       color: 'white'
                     }}>
                       <div className="message-header">

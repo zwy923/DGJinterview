@@ -66,6 +66,22 @@ class LLMService:
         
         return False
     
+    def _should_skip_temperature_for_model(self, model_name: str) -> bool:
+        """
+        判断模型是否不支持自定义 temperature（只支持默认值）
+        某些新模型（如 gpt-5-mini）只支持默认 temperature=1
+        """
+        model_lower = model_name.lower()
+        models_without_temperature = [
+            "gpt-5", "o1", "o3"
+        ]
+        
+        for model_pattern in models_without_temperature:
+            if model_pattern in model_lower:
+                return True
+        
+        return False
+    
     async def stream_generate(
         self,
         prompt: str,
@@ -87,8 +103,9 @@ class LLMService:
         
         model = self.model_brief if mode == "brief" else self.model_full
         
-        # 根据模型类型选择正确的参数名
+        # 根据模型类型选择正确的参数
         use_completion_tokens = self._should_use_max_completion_tokens_for_model(model)
+        skip_temperature = self._should_skip_temperature_for_model(model)
         
         try:
             async with aiohttp.ClientSession() as session:
@@ -102,36 +119,94 @@ class LLMService:
                     "messages": [
                         {"role": "user", "content": prompt}
                     ],
-                    "temperature": self.temperature,
                     "stream": True
                 }
                 
-                # 根据模型类型添加正确的参数
+                # 根据模型类型添加参数
+                if not skip_temperature:
+                    payload["temperature"] = self.temperature
+                
                 if use_completion_tokens:
                     payload["max_completion_tokens"] = self.max_tokens
                 else:
                     payload["max_tokens"] = self.max_tokens
                 
                 async with session.post(url, headers=headers, json=payload) as resp:
-                    # 如果使用 max_tokens 失败，尝试使用 max_completion_tokens
+                    # 处理400错误，可能是参数不兼容
                     if resp.status == 400:
                         error_text = await resp.text()
                         try:
                             error_data = json.loads(error_text)
                             error_msg = error_data.get("error", {}).get("message", "")
+                            error_code = error_data.get("error", {}).get("code", "")
+                            
+                            # 检查是否需要切换参数
+                            needs_retry = False
+                            
+                            # 情况1: max_tokens 需要改为 max_completion_tokens
                             if "max_tokens" in error_msg and "max_completion_tokens" in error_msg:
-                                # 需要切换到 max_completion_tokens
                                 logger.info(f"模型 {model} 需要使用 max_completion_tokens，正在重试...")
                                 payload.pop("max_tokens", None)
                                 payload["max_completion_tokens"] = self.max_tokens
-                                
+                                needs_retry = True
+                            
+                            # 情况2: temperature 不支持自定义值
+                            elif "temperature" in error_msg.lower() and ("unsupported" in error_msg.lower() or "only the default" in error_msg.lower()):
+                                logger.info(f"模型 {model} 不支持自定义 temperature，移除该参数后重试...")
+                                payload.pop("temperature", None)
+                                needs_retry = True
+                            
+                            # 情况3: stream 不支持（需要组织验证或模型不支持流式）
+                            elif "stream" in error_msg.lower() and ("verified" in error_msg.lower() or "organization" in error_msg.lower() or "unsupported" in error_msg.lower()):
+                                logger.warning(f"模型 {model} 不支持流式输出，降级为非流式请求...")
+                                # 降级为非流式请求
+                                payload["stream"] = False
+                                needs_retry = True
+                            
+                            # 情况4: 同时需要修复多个参数
+                            elif ("max_tokens" in error_msg or "temperature" in error_msg.lower()):
+                                # 尝试修复所有可能的参数问题
+                                logger.info(f"模型 {model} 需要调整参数，正在重试...")
+                                if "max_tokens" in error_msg and "max_completion_tokens" in error_msg:
+                                    payload.pop("max_tokens", None)
+                                    payload["max_completion_tokens"] = self.max_tokens
+                                if "temperature" in error_msg.lower():
+                                    payload.pop("temperature", None)
+                                needs_retry = True
+                            
+                            if needs_retry:
                                 # 重新发送请求
                                 async with session.post(url, headers=headers, json=payload) as retry_resp:
                                     if retry_resp.status != 200:
                                         error_text = await retry_resp.text()
                                         logger.error(f"LLM API错误（重试后）: {retry_resp.status} - {error_text}")
                                         return
-                                    # 继续处理成功的响应
+                                    
+                                    # 如果降级为非流式，需要特殊处理
+                                    if not payload.get("stream", True):
+                                        # 非流式响应：一次性获取完整内容，然后模拟流式输出
+                                        response_data = await retry_resp.json()
+                                        choices = response_data.get("choices", [])
+                                        if choices:
+                                            full_content = choices[0].get("message", {}).get("content", "")
+                                            if full_content:
+                                                # 模拟流式输出：按词输出（更自然的流式体验）
+                                                import asyncio
+                                                words = full_content.split()
+                                                for i, word in enumerate(words):
+                                                    # 第一个词直接输出，后续词前加空格
+                                                    if i == 0:
+                                                        yield word
+                                                    else:
+                                                        yield " " + word
+                                                    # 添加小延迟，模拟真实流式输出
+                                                    await asyncio.sleep(0.02)  # 20ms延迟
+                                                return
+                                        else:
+                                            logger.error(f"非流式响应中未找到内容: {response_data}")
+                                            return
+                                    
+                                    # 继续处理成功的流式响应
                                     resp = retry_resp
                             else:
                                 logger.error(f"LLM API错误: {resp.status} - {error_text}")

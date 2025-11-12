@@ -82,7 +82,7 @@ class AnswerAgent:
         # 根据模式选择不同的prompt模板
         if mode == "brief":
             # 快答模式：一句话回答
-            prompt = f"""你是一位专业的面试助手，帮助面试者回答问题。
+            prompt = f"""你是一位专业的AI助手，帮助面试者回答问题。
 
 【当前问题】
 {question}
@@ -99,10 +99,10 @@ class AnswerAgent:
 【最近对话】
 {dialogue_text if dialogue_text else "（无）"}
 
-请基于以上内容，用一句话简短回答这个问题。以第一人称表述。"""
+请基于以上内容，用一句话简短回答这个问题。"""
         else:
             # 正常模式：详细回答
-            prompt = f"""你是一位专业的面试助手，帮助面试者优化回答。
+            prompt = f"""你是一位专业的面试助手，帮助面试者回答问题。
 
 【当前问题】
 {question}
