@@ -22,10 +22,11 @@ class TranscriptDAO:
         speaker: str,
         content: str,
         embedding: Optional[np.ndarray] = None,
-        metadata: Optional[Dict[str, Any]] = None
+        metadata: Optional[Dict[str, Any]] = None,
+        update_embedding: bool = True
     ) -> int:
         """
-        保存transcript
+        保存transcript（如果embedding存在且记录已存在，则更新embedding）
         
         Args:
             session_id: 会话ID
@@ -33,9 +34,10 @@ class TranscriptDAO:
             content: 内容
             embedding: 向量嵌入（可选）
             metadata: 元数据（可选）
+            update_embedding: 如果记录已存在且embedding不为空，是否更新embedding
         
         Returns:
-            插入的记录ID
+            插入或更新的记录ID
         """
         if not pg_pool.pool:
             logger.warning("PostgreSQL未初始化，跳过保存")
@@ -50,6 +52,39 @@ class TranscriptDAO:
             # 序列化metadata为JSON字符串（asyncpg需要）
             metadata_json = json.dumps(metadata) if metadata else None
             
+            # 如果embedding存在且需要更新，先尝试更新已存在的记录
+            if embedding_str and update_embedding:
+                try:
+                    # 尝试更新最近一条相同session_id和speaker的记录（如果没有embedding）
+                    update_query = """
+                        UPDATE transcripts
+                        SET embedding = $1::vector,
+                            metadata = COALESCE($2::jsonb, metadata),
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE id = (
+                            SELECT id FROM transcripts
+                            WHERE session_id = $3 AND speaker = $4
+                            ORDER BY timestamp DESC
+                            LIMIT 1
+                        )
+                        AND embedding IS NULL
+                        RETURNING id
+                    """
+                    result = await pg_pool.fetchrow(
+                        update_query,
+                        embedding_str,
+                        metadata_json,
+                        session_id,
+                        speaker
+                    )
+                    if result:
+                        logger.debug(f"已更新transcript的embedding: id={result['id']}")
+                        return result['id']
+                except Exception as e:
+                    # 更新失败，继续插入新记录
+                    logger.debug(f"更新embedding失败，将插入新记录: {e}")
+            
+            # 插入新记录
             query = """
                 INSERT INTO transcripts (session_id, speaker, content, embedding, metadata)
                 VALUES ($1, $2, $3, $4::vector, $5::jsonb)

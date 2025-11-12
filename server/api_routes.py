@@ -37,7 +37,7 @@ def _sanitize_content(content: str, max_length: int = None) -> str:
     return content.strip()
 
 
-@router.post("/gpt", response_model=GPTResponse)
+@router.post("/gpt")
 async def ask_gpt(request: GPTRequest):
     """GPT问答接口（增强版：支持CV、知识库、岗位信息、RAG）"""
     try:
@@ -73,8 +73,10 @@ async def ask_gpt(request: GPTRequest):
         cv_info = results.get("cv")
         job_info = results.get("job")
         
-        # 3. RAG检索相关上下文（如果启用）
+        # 3. 获取对话上下文（如果启用RAG）
         rag_context = []
+        recent_dialogue = []
+        
         if request.use_rag and request.session_id:
             try:
                 # 获取会话状态（用于内存对话历史）
@@ -84,12 +86,28 @@ async def ask_gpt(request: GPTRequest):
                     session_key = f"{request.session_id}_sys"
                     session_state = _sessions.get(session_key) if _sessions else None
                 
-                # 严格检查session_state，使用SessionMemoryRetriever
+                # 严格检查session_state
                 if session_state and hasattr(session_state, "get_history_with_embeddings"):
                     try:
+                        # 1. 获取完整的最近对话历史（直接使用，不依赖向量检索）
+                        full_history = session_state.get_history_with_embeddings()
+                        if full_history:
+                            # 获取最近10条对话作为基础上下文
+                            recent_items = full_history[-10:] if len(full_history) > 10 else full_history
+                            for item in recent_items:
+                                content = item.get('content', '').strip()
+                                speaker = item.get('speaker', 'unknown')
+                                if content:
+                                    recent_dialogue.append({
+                                        'content': content,
+                                        'speaker': speaker,
+                                        'source': 'recent_history'
+                                    })
+                            logger.info(f"[/gpt] 获取到 {len(recent_dialogue)} 条最近对话历史")
+                        
+                        # 2. 使用向量检索获取与问题最相关的对话（补充上下文）
                         from nlp.langchain_components import SessionMemoryRetriever
-                        # 从内存对话历史检索（使用LangChain Retriever）
-                        memory_retriever = SessionMemoryRetriever(session_state, top_k=2)
+                        memory_retriever = SessionMemoryRetriever(session_state, top_k=5)
                         memory_docs = await memory_retriever.aget_relevant_documents(request.prompt)
                         # 转换为原有格式
                         for doc in memory_docs:
@@ -97,12 +115,13 @@ async def ask_gpt(request: GPTRequest):
                                 'content': doc.page_content,
                                 'speaker': doc.metadata.get('speaker', 'unknown'),
                                 'similarity': doc.metadata.get('similarity', 0.0),
-                                'source': 'memory'
+                                'source': 'memory_retrieval'
                             })
+                        logger.info(f"[/gpt] 向量检索到 {len(rag_context)} 条相关对话")
                     except Exception as e:
                         logger.warning(f"RAG内存检索失败: {e}")
                 else:
-                    logger.debug("无有效的session_state，跳过RAG memory检索")
+                    logger.debug("无有效的session_state，跳过对话历史检索")
                 
                 # 从PostgreSQL检索相关对话（如果RAG启用）
                 if rag_retriever.enabled:
@@ -113,10 +132,11 @@ async def ask_gpt(request: GPTRequest):
                                 query=request.prompt,
                                 query_embedding=query_embedding,
                                 session_id=request.session_id,
-                                top_k=2
+                                top_k=3
                             )
                             if db_results:
                                 rag_context.extend(db_results)
+                                logger.info(f"[/gpt] 数据库检索到 {len(db_results)} 条相关对话")
                     except Exception as e:
                         logger.warning(f"RAG数据库检索失败: {e}")
             except Exception as e:
@@ -152,30 +172,136 @@ async def ask_gpt(request: GPTRequest):
                     enhanced_prompt_parts.append(f"要求：{req}")
             enhanced_prompt_parts.append("")
         
-        # 添加RAG检索的相关上下文（最近对话）
-        if rag_context:
-            enhanced_prompt_parts.append("【最近对话】")
-            for item in rag_context[:2]:  # 最多2条
-                content = item.get('content', '')
-                if content:
-                    content = _sanitize_content(content, max_length=100)
-                    speaker = item.get('speaker', 'unknown')
-                    speaker_name = "面试官" if speaker == "interviewer" else "我"
-                    enhanced_prompt_parts.append(f"{speaker_name}：{content}")
-            enhanced_prompt_parts.append("")
+        # 添加对话上下文（优先使用最近对话，补充向量检索的相关对话）
+        if recent_dialogue or rag_context:
+            enhanced_prompt_parts.append("【对话上下文】")
+            
+            # 首先添加最近对话（更全面）
+            if recent_dialogue:
+                enhanced_prompt_parts.append("最近对话：")
+                for item in recent_dialogue[-8:]:  # 最多8条最近对话
+                    content = item.get('content', '')
+                    if content:
+                        content = _sanitize_content(content, max_length=200)
+                        speaker = item.get('speaker', 'unknown')
+                        speaker_name = "面试官" if speaker == "interviewer" else "我"
+                        enhanced_prompt_parts.append(f"{speaker_name}：{content}")
+                enhanced_prompt_parts.append("")
+            
+            # 然后添加向量检索的相关对话（补充）
+            if rag_context:
+                enhanced_prompt_parts.append("相关对话（与问题最相关）：")
+                for item in rag_context[:3]:  # 最多3条最相关的
+                    content = item.get('content', '')
+                    if content:
+                        content = _sanitize_content(content, max_length=150)
+                        speaker = item.get('speaker', 'unknown')
+                        speaker_name = "面试官" if speaker == "interviewer" else "我"
+                        similarity = item.get('similarity', 0.0)
+                        enhanced_prompt_parts.append(f"{speaker_name}：{content}")
+                enhanced_prompt_parts.append("")
         
         # 添加用户的问题/请求
         user_prompt = _sanitize_content(request.prompt)
         enhanced_prompt_parts.append("【问题】")
         enhanced_prompt_parts.append(user_prompt)
         enhanced_prompt_parts.append("")
-        enhanced_prompt_parts.append("请基于以上简历、岗位信息和对话上下文，用1句话简短回答。")
+        enhanced_prompt_parts.append("请基于以上简历、岗位信息和对话上下文，为面试者提供专业、简洁的回答建议。")
         
         enhanced_prompt = "\n".join(enhanced_prompt_parts)
         
-        # 调用LLM生成回复，限制token数量以保持简洁
-        reply = await llm_api.generate(enhanced_prompt, stream=request.stream, max_tokens=300)
-        return GPTResponse(reply=reply)
+        # 如果请求流式响应，返回流式
+        if request.stream:
+            from fastapi.responses import StreamingResponse
+            import json as json_lib
+            
+            async def generate_stream():
+                """生成流式响应"""
+                try:
+                    messages = [{"role": "user", "content": enhanced_prompt}]
+                    has_error = False
+                    full_content = ""
+                    
+                    async for chunk in llm_api.chat(messages, stream=True, max_tokens=1000):
+                        if chunk.get("error"):
+                            # 如果流式不支持，降级为非流式
+                            error_msg = chunk.get("content", "")
+                            if "stream" in error_msg.lower() and ("unsupported" in error_msg.lower() or "verified" in error_msg.lower()):
+                                logger.warning("流式响应失败，降级为非流式响应")
+                                # 使用非流式重新生成
+                                reply = await llm_api.generate(enhanced_prompt, stream=False, max_tokens=1000)
+                                # 将完整内容作为单个块发送
+                                data = json_lib.dumps({
+                                    "content": reply,
+                                    "done": True
+                                })
+                                yield f"data: {data}\n\n"
+                                return
+                            else:
+                                has_error = True
+                                error_data = json_lib.dumps({
+                                    "content": error_msg,
+                                    "done": True,
+                                    "error": True
+                                })
+                                yield f"data: {error_data}\n\n"
+                                return
+                        
+                        if chunk.get("content"):
+                            content = chunk["content"]
+                            full_content += content
+                            # 发送SSE格式的数据
+                            data = json_lib.dumps({
+                                "content": content,
+                                "done": chunk.get("done", False)
+                            })
+                            yield f"data: {data}\n\n"
+                        
+                        if chunk.get("done"):
+                            break
+                    
+                    # 如果没有错误且没有内容，可能是流式失败但未报错，降级为非流式
+                    if not has_error and not full_content:
+                        logger.warning("流式响应无内容，降级为非流式响应")
+                        reply = await llm_api.generate(enhanced_prompt, stream=False, max_tokens=300)
+                        data = json_lib.dumps({
+                            "content": reply,
+                            "done": True
+                        })
+                        yield f"data: {data}\n\n"
+                except Exception as e:
+                    logger.error(f"流式生成失败: {e}")
+                    # 尝试降级为非流式
+                    try:
+                        logger.info("尝试降级为非流式响应")
+                        reply = await llm_api.generate(enhanced_prompt, stream=False, max_tokens=300)
+                        data = json_lib.dumps({
+                            "content": reply,
+                            "done": True
+                        })
+                        yield f"data: {data}\n\n"
+                    except Exception as fallback_error:
+                        logger.error(f"非流式降级也失败: {fallback_error}")
+                        error_data = json_lib.dumps({
+                            "content": f"生成失败: {str(e)}",
+                            "done": True,
+                            "error": True
+                        })
+                        yield f"data: {error_data}\n\n"
+            
+            return StreamingResponse(
+                generate_stream(),
+                media_type="text/event-stream",
+                headers={
+                    "Cache-Control": "no-cache",
+                    "Connection": "keep-alive",
+                    "X-Accel-Buffering": "no"
+                }
+            )
+        else:
+            # 非流式响应
+            reply = await llm_api.generate(enhanced_prompt, stream=False, max_tokens=1000)
+            return GPTResponse(reply=reply)
     except HTTPException:
         raise
     except ValueError as e:
@@ -188,14 +314,45 @@ async def ask_gpt(request: GPTRequest):
 
 @router.post("/chat/save", response_model=ChatHistoryResponse)
 async def save_chat_message_api(request: ChatHistoryRequest):
-    """保存聊天消息到后端"""
+    """保存聊天消息到内存（不保存到数据库）"""
     try:
-        await transcript_dao.save_transcript(
-            session_id=request.session_id,
-            speaker=request.message.speaker,
-            content=request.message.content
-        )
-        return ChatHistoryResponse(success=True, message="消息保存成功")
+        # 延迟导入，避免循环导入
+        from gateway.ws_audio import _sessions
+        from utils.embedding import embedding_service
+        
+        # 获取会话状态
+        session_key = f"{request.session_id}_mic"
+        session_state = _sessions.get(session_key) if _sessions else None
+        if not session_state:
+            session_key = f"{request.session_id}_sys"
+            session_state = _sessions.get(session_key) if _sessions else None
+        
+        if session_state:
+            # 异步生成embedding并添加到内存历史
+            async def add_to_memory():
+                try:
+                    embedding = await embedding_service.generate_embedding(request.message.content)
+                    session_state.add_to_history(
+                        content=request.message.content,
+                        speaker=request.message.speaker,
+                        embedding=embedding,
+                        timestamp=request.message.timestamp
+                    )
+                except Exception as e:
+                    logger.warning(f"生成embedding失败，仅保存文本: {e}")
+                    # 即使embedding失败，也保存文本
+                    session_state.add_to_history(
+                        content=request.message.content,
+                        speaker=request.message.speaker,
+                        timestamp=request.message.timestamp
+                    )
+            
+            # 后台任务，不阻塞
+            import asyncio
+            asyncio.create_task(add_to_memory())
+            return ChatHistoryResponse(success=True, message="消息已添加到内存")
+        else:
+            return ChatHistoryResponse(success=False, message="会话未找到，请先建立WebSocket连接")
     except ValueError as e:
         logger.error(f"保存消息参数错误: {e}")
         return ChatHistoryResponse(success=False, message=f"参数错误: {str(e)}")
@@ -206,10 +363,33 @@ async def save_chat_message_api(request: ChatHistoryRequest):
 
 @router.get("/chat/history/{session_id}")
 async def get_chat_history_api(session_id: str):
-    """获取会话聊天记录"""
+    """获取会话聊天记录（从内存）"""
     try:
-        transcripts = await transcript_dao.get_transcripts(session_id)
-        return {"messages": transcripts}
+        # 延迟导入，避免循环导入
+        from gateway.ws_audio import _sessions
+        
+        # 获取会话状态
+        session_key = f"{session_id}_mic"
+        session_state = _sessions.get(session_key) if _sessions else None
+        if not session_state:
+            session_key = f"{session_id}_sys"
+            session_state = _sessions.get(session_key) if _sessions else None
+        
+        if session_state and hasattr(session_state, "get_history_with_embeddings"):
+            history = session_state.get_history_with_embeddings()
+            # 转换为API格式
+            messages = []
+            for item in history:
+                messages.append({
+                    "id": item.get("timestamp", ""),
+                    "speaker": item.get("speaker", "unknown"),
+                    "content": item.get("content", ""),
+                    "timestamp": item.get("timestamp", ""),
+                    "type": "text"
+                })
+            return {"messages": messages}
+        else:
+            return {"messages": []}
     except ValueError as e:
         logger.error(f"获取聊天记录参数错误: {e}")
         raise HTTPException(status_code=400, detail=str(e))
@@ -220,21 +400,40 @@ async def get_chat_history_api(session_id: str):
 
 @router.get("/chat/stats/{session_id}")
 async def get_chat_stats_api(session_id: str):
-    """获取会话统计信息"""
+    """获取会话统计信息（从内存）"""
     try:
-        transcripts = await transcript_dao.get_transcripts(session_id)
+        # 延迟导入，避免循环导入
+        from gateway.ws_audio import _sessions
         
-        user_count = sum(1 for t in transcripts if t.get("speaker") == "user")
-        interviewer_count = sum(1 for t in transcripts if t.get("speaker") == "interviewer")
-        system_count = sum(1 for t in transcripts if t.get("speaker") == "system")
+        # 获取会话状态
+        session_key = f"{session_id}_mic"
+        session_state = _sessions.get(session_key) if _sessions else None
+        if not session_state:
+            session_key = f"{session_id}_sys"
+            session_state = _sessions.get(session_key) if _sessions else None
         
-        return {
-            "total_messages": len(transcripts),
-            "user_messages": user_count,
-            "interviewer_messages": interviewer_count,
-            "system_messages": system_count,
-            "last_activity": transcripts[-1].get("timestamp") if transcripts else None
-        }
+        if session_state and hasattr(session_state, "get_history_with_embeddings"):
+            history = session_state.get_history_with_embeddings()
+            
+            user_count = sum(1 for h in history if h.get("speaker") == "user")
+            interviewer_count = sum(1 for h in history if h.get("speaker") == "interviewer")
+            system_count = sum(1 for h in history if h.get("speaker") == "system")
+            
+            return {
+                "total_messages": len(history),
+                "user_messages": user_count,
+                "interviewer_messages": interviewer_count,
+                "system_messages": system_count,
+                "last_activity": history[-1].get("timestamp") if history else None
+            }
+        else:
+            return {
+                "total_messages": 0,
+                "user_messages": 0,
+                "interviewer_messages": 0,
+                "system_messages": 0,
+                "last_activity": None
+            }
     except ValueError as e:
         logger.error(f"获取统计信息参数错误: {e}")
         raise HTTPException(status_code=400, detail=str(e))
@@ -250,18 +449,31 @@ async def analyze_interview(request: InterviewAnalysisRequest):
         if request.type != "interview_analysis":
             raise HTTPException(status_code=400, detail="Invalid analysis type")
         
-        # 获取transcripts（从request.data或request.session_id）
+        # 获取transcripts（从内存）
         session_id = request.session_id or (request.data.get("sessionId") if request.data else None) or "unknown"
-        transcripts = await transcript_dao.get_transcripts(session_id)
         
-        if not transcripts:
+        # 延迟导入，避免循环导入
+        from gateway.ws_audio import _sessions
+        
+        # 获取会话状态
+        session_key = f"{session_id}_mic"
+        session_state = _sessions.get(session_key) if _sessions else None
+        if not session_state:
+            session_key = f"{session_id}_sys"
+            session_state = _sessions.get(session_key) if _sessions else None
+        
+        if not session_state or not hasattr(session_state, "get_history_with_embeddings"):
+            raise HTTPException(status_code=404, detail="未找到聊天记录（会话不存在或已过期）")
+        
+        history = session_state.get_history_with_embeddings()
+        if not history:
             raise HTTPException(status_code=404, detail="未找到聊天记录")
         
         # 构建对话历史（清洗内容）
         chat_history_parts = []
-        for t in transcripts:
-            speaker = t.get('speaker', 'unknown')
-            content = _sanitize_content(t.get('content', ''), max_length=500)
+        for h in history:
+            speaker = h.get('speaker', 'unknown')
+            content = _sanitize_content(h.get('content', ''), max_length=500)
             if content:
                 chat_history_parts.append(f"{speaker}: {content}")
         

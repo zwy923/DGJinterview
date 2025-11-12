@@ -26,7 +26,7 @@ export default function RightPanel({ chatHistory, sessionId = "default", userId,
     }
   }, [agentReply]);
 
-  // 手动生成回答建议
+  // 手动生成回答建议（流式）
   const handleGetSuggestion = async () => {
     if (chatHistory.length === 0) {
       setGptReply("暂无对话记录，请先开始面试对话");
@@ -35,6 +35,10 @@ export default function RightPanel({ chatHistory, sessionId = "default", userId,
 
     setIsLoading(true);
     
+    // 保存当前内容，用于追加（不清空）
+    const previousContent = gptReply;
+    const separator = previousContent && previousContent.trim() && !previousContent.endsWith('\n\n') ? '\n\n' : '';
+    
     try {
       // 构建上下文，包含最近的对话
       const recentMessages = chatHistory.slice(-10); // 最近10条消息
@@ -42,18 +46,29 @@ export default function RightPanel({ chatHistory, sessionId = "default", userId,
         `${msg.speaker === 'user' ? '我' : '面试官'}: ${msg.content}`
       ).join('\n');
       
-      const prompt = `面试对话上下文：\n${context}\n\n请基于以上对话，为面试者提供回答建议和技巧，帮助优化回答质量。`;
+      const prompt = `面试对话上下文：\n${context}\n\n请基于以上对话，为面试者提供简要回答。`;
       
-      // 传递sessionId和userId，启用RAG增强
+      // 传递sessionId和userId，启用RAG增强，使用流式响应
+      let newContent = '';
       const reply = await askGPT(prompt, {
         sessionId: sessionId,
         userId: userId,
-        useRag: true
+        useRag: true,
+        stream: true,
+        onChunk: (chunk: string) => {
+          // 流式更新显示：在之前内容后追加新内容
+          newContent += chunk;
+          setGptReply(previousContent + separator + newContent);
+        }
       });
-      setGptReply(reply);
-    } catch (error) {
+      
+      // 确保最终内容已设置（流式完成后）
+      if (reply) {
+        setGptReply(previousContent + separator + reply);
+      }
+    } catch (error: any) {
       console.error("GPT请求失败:", error);
-      setGptReply("抱歉，无法获取AI建议，请稍后重试。");
+      setGptReply(previousContent + separator + '抱歉，无法获取AI建议，请稍后重试。');
     } finally {
       setIsLoading(false);
     }

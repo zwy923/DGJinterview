@@ -94,12 +94,12 @@ class SessionState:
         timestamp: Optional[str] = None
     ):
         """
-        添加对话到内存历史
+        添加对话到内存历史（仅内存存储，不保存到数据库）
         
         Args:
             content: 对话内容
             speaker: 说话者
-            embedding: 向量嵌入（可选）
+            embedding: 向量嵌入（可选，用于RAG检索）
             metadata: 元数据（可选）
             timestamp: 时间戳（可选，默认当前时间）
         """
@@ -112,10 +112,12 @@ class SessionState:
             # 移除最旧的条目
             self.chat_history.pop(0)
         
+        timestamp_str = timestamp or datetime.now().isoformat()
+        
         entry = {
             "content": content.strip(),
             "speaker": speaker,
-            "timestamp": timestamp or datetime.now().isoformat(),
+            "timestamp": timestamp_str,
             "embedding": embedding.tolist() if embedding is not None else None,
             "metadata": metadata or {}
         }

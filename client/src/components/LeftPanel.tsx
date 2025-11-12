@@ -35,7 +35,7 @@ export default function LeftPanel({
   const shouldAutoScrollRef = useRef(true);
   const scrollTimeoutRef = useRef<number | null>(null);
 
-  // 向agent提问
+  // 向agent提问（流式）
   const handleAskAgent = async () => {
     if (!questionText.trim() || isAskingAgent) return;
     
@@ -49,18 +49,29 @@ export default function LeftPanel({
       const { askGPT } = await import("../api/apiClient");
       const prompt = userQuestion; // 简化prompt，后端会添加所有上下文信息
       
+      // 流式响应：实时更新回答
+      let fullReply = "";
+      
       const reply = await askGPT(prompt, {
         sessionId: sessionId,
         userId: userId,
-        useRag: true
+        useRag: true,
+        stream: true,
+        onChunk: (chunk: string) => {
+          // 流式更新：每次收到新内容块时更新显示
+          fullReply += chunk;
+          if (onAgentReply) {
+            onAgentReply(userQuestion, fullReply);
+          }
+        }
       });
       
+      // 确保最终内容已设置（流式完成后）
       if (reply && reply.trim()) {
-        // 通过回调将问题和回答传递给父组件，显示在RightPanel
         if (onAgentReply) {
           onAgentReply(userQuestion, reply.trim());
         }
-      } else {
+      } else if (!fullReply) {
         alert("未能获取回答，请稍后重试");
       }
     } catch (error: any) {

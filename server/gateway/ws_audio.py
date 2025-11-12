@@ -87,30 +87,13 @@ async def handle_audio_websocket(ws: WebSocket, session_id: str, source: str):
         speaker = "interviewer" if source == "sys" else "user"
         timestamp = datetime.now().isoformat()
         
-        # 保存transcript（带时间戳）
-        try:
-            message = ChatMessage(
-                id=str(int(time.time() * 1000)),
-                timestamp=timestamp,
-                speaker=speaker,
-                content=text,
-                type="text",
-            )
-            await transcript_dao.save_transcript(
-                session_id=session_id,
-                speaker=speaker,
-                content=text
-            )
-        except Exception as e:
-            logger.error(f"保存transcript失败: {e}")
-        
         # 异步生成向量并存入内存（不阻塞主流程）
         async def vectorize_and_store():
-            """后台任务：生成向量并存入内存"""
+            """后台任务：生成向量并存入内存（仅内存存储，用于RAG检索）"""
             try:
                 embedding = await embedding_service.generate_embedding(text)
                 if embedding is not None:
-                    # 存入内存历史
+                    # 存入内存历史（带embedding，用于上下文检索）
                     state.add_to_history(
                         content=text,
                         speaker=speaker,

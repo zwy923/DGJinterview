@@ -293,6 +293,7 @@ export interface GPTResponse {
 
 /**
  * 调用 GPT API（增强版：支持CV、知识库、岗位信息、RAG）
+ * 支持流式响应
  */
 export async function askGPT(
   prompt: string,
@@ -301,19 +302,85 @@ export async function askGPT(
     sessionId?: string;
     userId?: string;
     useRag?: boolean;
+    onChunk?: (chunk: string) => void;
   }
 ): Promise<string> {
-  const response = await request<GPTResponse>('/gpt', {
-    method: 'POST',
-    body: JSON.stringify({
-      prompt,
-      stream: options?.stream || false,
-      session_id: options?.sessionId,
-      user_id: options?.userId,
-      use_rag: options?.useRag !== false, // 默认启用RAG
-    }),
-  });
-  return response.reply || '';
+  const shouldStream = options?.stream !== false; // 默认启用流式
+  
+  if (shouldStream && options?.onChunk) {
+    // 流式响应
+    const url = `${API_BASE_URL}/gpt`;
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        prompt,
+        stream: true,
+        session_id: options?.sessionId,
+        user_id: options?.userId,
+        use_rag: options?.useRag !== false,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ error: response.statusText }));
+      throw new Error(errorData.error || errorData.message || `HTTP ${response.status}`);
+    }
+
+    const reader = response.body?.getReader();
+    const decoder = new TextDecoder();
+    let fullContent = '';
+
+    if (!reader) {
+      throw new Error('无法读取响应流');
+    }
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value, { stream: true });
+        const lines = chunk.split('\n');
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              const data = JSON.parse(line.slice(6));
+              if (data.content) {
+                fullContent += data.content;
+                options.onChunk!(data.content);
+              }
+              if (data.done || data.error) {
+                return fullContent;
+              }
+            } catch (e) {
+              // 忽略解析错误
+            }
+          }
+        }
+      }
+    } finally {
+      reader.releaseLock();
+    }
+
+    return fullContent;
+  } else {
+    // 非流式响应
+    const response = await request<GPTResponse>('/gpt', {
+      method: 'POST',
+      body: JSON.stringify({
+        prompt,
+        stream: false,
+        session_id: options?.sessionId,
+        user_id: options?.userId,
+        use_rag: options?.useRag !== false,
+      }),
+    });
+    return response.reply || '';
+  }
 }
 
 // =====================================================
