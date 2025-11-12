@@ -1,14 +1,20 @@
 /* 主页面样式 */
 .homepage {
   min-height: 100vh;
+  height: 100vh;
+  width: 100vw;
   background: linear-gradient(135deg, #000000 0%, #0a0a0a 50%, #111111 100%);
   color: var(--text-primary);
-  padding: 2rem;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 .homepage-header {
   text-align: center;
-  margin-bottom: 3rem;
+  padding: 2rem 2rem 1.5rem;
+  flex-shrink: 0;
 }
 
 .homepage-title {
@@ -34,13 +40,24 @@
 
 .homepage-content {
   max-width: 1200px;
+  width: 100%;
   margin: 0 auto;
+  padding: 0 2rem 2rem;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
 }
 
 /* 新建面试区域 */
 .new-interview-section {
-  text-align: center;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 1rem;
   margin-bottom: 3rem;
+  flex-shrink: 0;
+  flex-wrap: wrap;
 }
 
 .new-interview-btn {
@@ -59,6 +76,10 @@
   gap: 0.75rem;
 }
 
+.audio-test-btn {
+  background: linear-gradient(135deg, #f59e0b, #d97706);
+}
+
 .new-interview-btn:hover {
   transform: translateY(-2px);
   box-shadow: var(--shadow-xl);
@@ -70,10 +91,18 @@
 }
 
 /* 面试历史 */
+.interview-history {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
 .interview-history h2 {
   font-size: 1.8rem;
   margin-bottom: 1.5rem;
   color: var(--text-primary);
+  flex-shrink: 0;
 }
 
 .empty-history {
@@ -91,6 +120,9 @@
   display: grid;
   gap: 1rem;
   grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
+  flex: 1;
+  overflow-y: auto;
+  padding-bottom: 1rem;
 }
 
 .history-item {
@@ -138,6 +170,12 @@
   border: 1px solid rgba(139, 92, 246, 0.3);
 }
 
+.history-actions {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+}
+
 .continue-btn {
   background: var(--primary-color);
   border: none;
@@ -151,6 +189,27 @@
 
 .continue-btn:hover {
   background: var(--primary-dark);
+  transform: translateY(-1px);
+}
+
+.delete-btn {
+  background: rgba(239, 68, 68, 0.2);
+  border: 1px solid rgba(239, 68, 68, 0.5);
+  padding: 0.5rem 0.75rem;
+  border-radius: var(--radius-md);
+  color: #ef4444;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: all var(--transition-normal);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 40px;
+}
+
+.delete-btn:hover {
+  background: rgba(239, 68, 68, 0.3);
+  border-color: #ef4444;
   transform: translateY(-1px);
 }
 
@@ -346,17 +405,50 @@
 }
 
 /* 响应式设计 */
+@media (max-width: 1024px) {
+  .homepage-content {
+    padding: 0 1.5rem 1.5rem;
+  }
+  
+  .homepage-header {
+    padding: 1.5rem 1.5rem 1rem;
+  }
+  
+  .history-list {
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  }
+}
+
 @media (max-width: 768px) {
-  .homepage {
-    padding: 1rem;
+  .homepage-header {
+    padding: 1.5rem 1rem 1rem;
+  }
+  
+  .homepage-content {
+    padding: 0 1rem 1rem;
   }
   
   .homepage-title {
-    font-size: 2rem;
+    font-size: 2.5rem;
+  }
+  
+  .title-icon {
+    font-size: 3rem;
   }
   
   .homepage-subtitle {
     font-size: 1rem;
+  }
+  
+  .new-interview-section {
+    flex-direction: column;
+  }
+  
+  .new-interview-btn {
+    padding: 1.25rem 2.5rem;
+    font-size: 1.1rem;
+    width: 100%;
+    max-width: 300px;
   }
   
   .history-list {
@@ -372,6 +464,7 @@
   .modal {
     width: 95%;
     margin: 1rem;
+    max-height: 90vh;
   }
   
   .language-grid {
@@ -380,16 +473,78 @@
 }
 
 @media (max-width: 480px) {
+  .homepage-header {
+    padding: 1rem 0.75rem 0.75rem;
+  }
+  
+  .homepage-content {
+    padding: 0 0.75rem 0.75rem;
+  }
+  
   .homepage-title {
-    font-size: 1.5rem;
+    font-size: 2rem;
+  }
+  
+  .title-icon {
+    font-size: 2.5rem;
+  }
+  
+  .homepage-subtitle {
+    font-size: 0.9rem;
   }
   
   .new-interview-btn {
     padding: 1rem 2rem;
     font-size: 1rem;
+    max-width: 100%;
+  }
+  
+  .btn-icon {
+    font-size: 1.25rem;
+  }
+  
+  .interview-history h2 {
+    font-size: 1.5rem;
+    margin-bottom: 1rem;
+  }
+  
+  .history-item {
+    padding: 1rem;
+  }
+  
+  .history-info h3 {
+    font-size: 1.1rem;
   }
   
   .language-grid {
     grid-template-columns: repeat(2, 1fr);
+  }
+  
+  .modal {
+    width: 100%;
+    margin: 0;
+    border-radius: 0;
+    max-height: 100vh;
+  }
+  
+  .modal-header,
+  .modal-content,
+  .modal-footer {
+    padding: 1rem;
+  }
+}
+
+@media (max-width: 360px) {
+  .homepage-title {
+    font-size: 1.75rem;
+  }
+  
+  .title-icon {
+    font-size: 2rem;
+  }
+  
+  .new-interview-btn {
+    padding: 0.875rem 1.5rem;
+    font-size: 0.95rem;
   }
 }

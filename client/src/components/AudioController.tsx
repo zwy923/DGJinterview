@@ -2,7 +2,6 @@ import { useState, useRef, useEffect } from "react";
 import { connectASRWebSocket, startSystemAudio, stopSystemAudio, stopWebSocket } from "../api/websocket";
 import AudioTestPanel from "./AudioTestPanel";
 import AudioLevelMeter from "./AudioLevelMeter";
-import SystemAudioStatus from "./SystemAudioStatus";
 import { AudioWorkletManager } from "../audio/audioWorkletManager";
 
 interface Props {
@@ -220,38 +219,26 @@ export default function AudioController({ onUserText, onInterviewerText, session
     }
   };
 
-  const start = async () => {
+  // 启动麦克风录音
+  const startMic = async () => {
     try {
       setError("");
-      console.log("🎧 开始捕获音频...");
+      console.log("🎤 开始捕获麦克风...");
       
-      // 启动用户麦克风
       await startUserAudio();
       
       setConnectionStatus("已连接 - 识别中");
       setRecording(true);
       
     } catch (err) {
-      console.error("录音启动失败:", err);
-      setError(err instanceof Error ? err.message : "录音启动失败");
+      console.error("麦克风启动失败:", err);
+      setError(err instanceof Error ? err.message : "麦克风启动失败");
     }
   };
 
-  // 单独启动系统音频
-  const startSystemAudioOnly = async () => {
-    try {
-      setError("");
-      await startSystemAudioCapture();
-      setSystemAudioEnabled(true);
-      setError("");
-    } catch (err) {
-      console.error("系统音频启动失败:", err);
-      setError(err instanceof Error ? err.message : "系统音频启动失败，请检查后端服务");
-    }
-  };
-
-  const stop = () => {
-    console.log("🛑 停止录音");
+  // 停止麦克风录音
+  const stopMic = () => {
+    console.log("🛑 停止麦克风录音");
     
     // 停止用户音频处理（AudioWorklet 或 ScriptProcessor）
     if (userWorkletManagerRef.current) {
@@ -280,7 +267,32 @@ export default function AudioController({ onUserText, onInterviewerText, session
       userWsRef.current = null;
     }
     
-    // 停止系统音频
+    setRecording(false);
+    if (!systemAudioEnabled) {
+      setConnectionStatus("未连接");
+    }
+  };
+
+  // 启动系统音频
+  const startSystem = async () => {
+    try {
+      setError("");
+      console.log("🔊 启动系统音频...");
+      
+      await startSystemAudioCapture();
+      setSystemAudioEnabled(true);
+      console.log("✅ 系统音频已启动");
+      
+    } catch (err) {
+      console.error("系统音频启动失败:", err);
+      setError(err instanceof Error ? err.message : "系统音频启动失败，请检查后端服务");
+    }
+  };
+
+  // 停止系统音频
+  const stopSystem = () => {
+    console.log("🛑 停止系统音频");
+    
     if (systemWsRef.current) {
       stopSystemAudio(systemWsRef.current).then(() => {
         stopWebSocket(systemWsRef.current!);
@@ -293,17 +305,22 @@ export default function AudioController({ onUserText, onInterviewerText, session
       setSystemStream(null);
     }
     
-    setRecording(false);
     setSystemAudioEnabled(false);
-    setConnectionStatus("未连接");
+    if (!recording) {
+      setConnectionStatus("未连接");
+    }
   };
+
 
 
   // 清理资源
   useEffect(() => {
     return () => {
       if (recording) {
-        stop();
+        stopMic();
+      }
+      if (systemAudioEnabled) {
+        stopSystem();
       }
     };
   }, []);
@@ -332,95 +349,13 @@ export default function AudioController({ onUserText, onInterviewerText, session
         justifyContent: 'center',
         alignItems: 'center'
       }}>
-        {!recording ? (
-          <button 
-            onClick={start}
-            style={{ 
-              background: 'linear-gradient(135deg, #10b981, #059669)',
-              color: 'white',
-              border: 'none',
-              borderRadius: '0.5rem',
-              padding: '0.75rem 1.5rem',
-              cursor: 'pointer',
-              fontSize: '0.875rem',
-              fontWeight: '600',
-              minWidth: '120px',
-              transition: 'all 0.2s ease',
-              boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)'
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.transform = 'translateY(-1px)';
-              e.currentTarget.style.boxShadow = '0 4px 8px rgba(0, 0, 0, 0.15)';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.transform = 'translateY(0)';
-              e.currentTarget.style.boxShadow = '0 2px 4px rgba(0, 0, 0, 0.1)';
-            }}
-          >
-            🎤 开始录音
-          </button>
-        ) : (
-          <button 
-            onClick={stop} 
-            style={{ 
-              background: 'linear-gradient(135deg, #ef4444, #dc2626)',
-              color: 'white',
-              border: 'none',
-              borderRadius: '0.5rem',
-              padding: '0.75rem 1.5rem',
-              cursor: 'pointer',
-              fontSize: '0.875rem',
-              fontWeight: '600',
-              minWidth: '120px',
-              transition: 'all 0.2s ease',
-              boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)'
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.transform = 'translateY(-1px)';
-              e.currentTarget.style.boxShadow = '0 4px 8px rgba(0, 0, 0, 0.15)';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.transform = 'translateY(0)';
-              e.currentTarget.style.boxShadow = '0 2px 4px rgba(0, 0, 0, 0.1)';
-            }}
-          >
-            ⏹ 停止录音
-          </button>
-        )}
-        
-        {recording && !systemAudioEnabled && (
-          <button 
-            onClick={startSystemAudioOnly}
-            style={{ 
-              background: 'linear-gradient(135deg, #8b5cf6, #7c3aed)',
-              color: 'white',
-              border: 'none',
-              borderRadius: '0.5rem',
-              padding: '0.75rem 1.5rem',
-              cursor: 'pointer',
-              fontSize: '0.875rem',
-              fontWeight: '600',
-              minWidth: '140px',
-              transition: 'all 0.2s ease',
-              boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)'
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.transform = 'translateY(-1px)';
-              e.currentTarget.style.boxShadow = '0 4px 8px rgba(0, 0, 0, 0.15)';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.transform = 'translateY(0)';
-              e.currentTarget.style.boxShadow = '0 2px 4px rgba(0, 0, 0, 0.1)';
-            }}
-          >
-            🔊 添加系统音频
-          </button>
-        )}
-        
+        {/* 麦克风录音按钮 */}
         <button 
-          onClick={() => setShowTestPanel(true)}
+          onClick={recording ? stopMic : startMic}
           style={{ 
-            background: 'linear-gradient(135deg, #f59e0b, #d97706)',
+            background: recording 
+              ? 'linear-gradient(135deg, #ef4444, #dc2626)' 
+              : 'linear-gradient(135deg, #10b981, #059669)',
             color: 'white',
             border: 'none',
             borderRadius: '0.5rem',
@@ -441,19 +376,42 @@ export default function AudioController({ onUserText, onInterviewerText, session
             e.currentTarget.style.boxShadow = '0 2px 4px rgba(0, 0, 0, 0.1)';
           }}
         >
-          🧪 音频测试
+          {recording ? '⏹ 停止麦克风' : '🎤 开始麦克风'}
         </button>
-        
+
+        {/* 系统音频按钮 */}
+        <button 
+          onClick={systemAudioEnabled ? stopSystem : startSystem}
+          style={{ 
+            background: systemAudioEnabled 
+              ? 'linear-gradient(135deg, #ef4444, #dc2626)' 
+              : 'linear-gradient(135deg, #8b5cf6, #7c3aed)',
+            color: 'white',
+            border: 'none',
+            borderRadius: '0.5rem',
+            padding: '0.75rem 1.5rem',
+            cursor: 'pointer',
+            fontSize: '0.875rem',
+            fontWeight: '600',
+            minWidth: '120px',
+            transition: 'all 0.2s ease',
+            boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)'
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.transform = 'translateY(-1px)';
+            e.currentTarget.style.boxShadow = '0 4px 8px rgba(0, 0, 0, 0.15)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.transform = 'translateY(0)';
+            e.currentTarget.style.boxShadow = '0 2px 4px rgba(0, 0, 0, 0.1)';
+          }}
+        >
+          {systemAudioEnabled ? '⏹ 停止系统音频' : '🔊 开始系统音频'}
+        </button>
       </div>
       
-      {/* 后端系统音频状态 */}
-      <SystemAudioStatus 
-        isEnabled={systemAudioEnabled}
-        onToggle={startSystemAudioOnly}
-      />
-      
       {/* 实时音频监控 */}
-      {recording && (
+      {(recording || systemAudioEnabled) && (
         <div style={{
           backgroundColor: '#f9fafb',
           padding: '1rem',
@@ -471,19 +429,23 @@ export default function AudioController({ onUserText, onInterviewerText, session
             📊 实时音频监控
           </div>
           
-          <AudioLevelMeter 
-            stream={userStreamRef.current}
-            label="🎤 麦克风"
-            color="#10b981"
-            isActive={recording}
-          />
+          {recording && (
+            <AudioLevelMeter 
+              stream={userStreamRef.current}
+              label="🎤 麦克风"
+              color="#10b981"
+              isActive={recording}
+            />
+          )}
           
-          <AudioLevelMeter 
-            stream={systemStream}
-            label="🔊 系统音频"
-            color="#8b5cf6"
-            isActive={systemAudioEnabled}
-          />
+          {systemAudioEnabled && (
+            <AudioLevelMeter 
+              stream={systemStream}
+              label="🔊 系统音频"
+              color="#8b5cf6"
+              isActive={systemAudioEnabled}
+            />
+          )}
         </div>
       )}
       
@@ -514,12 +476,13 @@ export default function AudioController({ onUserText, onInterviewerText, session
           </span>
         </div>
         <div>
-          {recording ? 
-            (systemAudioEnabled ? 
+          {recording || systemAudioEnabled ? 
+            (recording && systemAudioEnabled ? 
               "正在录音中，同时捕获您和面试官的声音..." : 
-              "正在录音中，仅捕获您的声音。点击上方按钮添加系统音频。"
+              recording ? "正在录音中，仅捕获您的声音" :
+              "正在录音中，仅捕获面试官的声音"
             ) : 
-            "点击开始录音，系统将识别您的声音"
+            "点击按钮开始录音，可分别控制麦克风和系统音频"
           }
         </div>
       </div>

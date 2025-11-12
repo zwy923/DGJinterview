@@ -3,6 +3,7 @@ FastAPI 入口
 """
 import asyncio
 from contextlib import asynccontextmanager
+from multiprocessing import context
 
 from fastapi import FastAPI, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
@@ -116,3 +117,4 @@ if __name__ == "__main__":
         port=settings.PORT,
         reload=settings.DEBUG
     )
+

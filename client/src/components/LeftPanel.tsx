@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import AudioController from "./AudioController";
 
 interface ChatMessage {
@@ -23,6 +23,8 @@ export default function LeftPanel({
   sessionId = "default"
 }: Props) {
   const [manualText, setManualText] = useState("");
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const chatMessagesRef = useRef<HTMLDivElement>(null);
 
   // 手动输入面试官的话
   const handleManualInput = () => {
@@ -32,45 +34,63 @@ export default function LeftPanel({
     }
   };
 
+  // 自动滚动到最新消息
+  const scrollToBottom = () => {
+    if (chatMessagesRef.current) {
+      chatMessagesRef.current.scrollTop = chatMessagesRef.current.scrollHeight;
+    }
+  };
+
+  // 当聊天记录更新时自动滚动
+  useEffect(() => {
+    // 使用 setTimeout 确保 DOM 更新后再滚动
+    setTimeout(() => {
+      scrollToBottom();
+    }, 0);
+  }, [chatHistory]);
+
   return (
     <div className="left-panel-content">
       <h2>💬 面试对话记录</h2>
       
       {/* 聊天记录显示区域 */}
       <div className="chat-container">
-        <div className="chat-messages">
+        <div className="chat-messages" ref={chatMessagesRef}>
           {chatHistory.length === 0 ? (
             <div className="empty-chat">
               <div className="empty-icon">💭</div>
               <p>开始语音识别，对话记录将显示在这里</p>
             </div>
           ) : (
-            chatHistory.map((message, index) => {
-              // 检查是否为部分结果（通过检查是否有 partial 属性或通过消息类型）
-              const isPartial = (message as any).isPartial || false;
-              
-              return (
-                <div 
-                  key={message.id} 
-                  className={`chat-message ${message.speaker === 'user' ? 'user-message' : 'interviewer-message'} ${isPartial ? 'partial-message' : ''}`}
-                >
-                  <div className="message-bubble">
-                    <div className="message-header">
-                      <span className="speaker-name">
-                        {message.speaker === 'user' ? '我' : '面试官'}
-                      </span>
-                      <span className="message-time">
-                        {new Date(message.timestamp).toLocaleTimeString()}
-                        {isPartial && <span className="partial-badge">识别中...</span>}
-                      </span>
-                    </div>
-                    <div className={`message-content ${isPartial ? 'partial-content' : ''}`}>
-                      {message.content}
+            <>
+              {chatHistory.map((message, index) => {
+                // 检查是否为部分结果（通过检查是否有 partial 属性或通过消息类型）
+                const isPartial = (message as any).isPartial || false;
+                
+                return (
+                  <div 
+                    key={message.id} 
+                    className={`chat-message ${message.speaker === 'user' ? 'user-message' : 'interviewer-message'} ${isPartial ? 'partial-message' : ''}`}
+                  >
+                    <div className="message-bubble">
+                      <div className="message-header">
+                        <span className="speaker-name">
+                          {message.speaker === 'user' ? '我' : '面试官'}
+                        </span>
+                        <span className="message-time">
+                          {new Date(message.timestamp).toLocaleTimeString()}
+                          {isPartial && <span className="partial-badge">识别中...</span>}
+                        </span>
+                      </div>
+                      <div className={`message-content ${isPartial ? 'partial-content' : ''}`}>
+                        {message.content}
+                      </div>
                     </div>
                   </div>
-                </div>
-              );
-            })
+                );
+              })}
+              <div ref={messagesEndRef} />
+            </>
           )}
         </div>
       </div>

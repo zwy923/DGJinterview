@@ -162,19 +162,6 @@ export default function InterviewPage() {
         </div>
         
         <div className="interview-actions">
-          {session.status === 'active' && (
-            <button onClick={pauseInterview} className="action-btn pause-btn">
-              暂停
-            </button>
-          )}
-          {session.status === 'paused' && (
-            <button onClick={resumeInterview} className="action-btn resume-btn">
-              恢复
-            </button>
-          )}
-          <button onClick={analyzeInterview} className="action-btn analyze-btn" disabled={isLoading}>
-            {isLoading ? '分析中...' : '分析表现'}
-          </button>
           <button onClick={endInterview} className="action-btn end-btn">
             结束面试
           </button>

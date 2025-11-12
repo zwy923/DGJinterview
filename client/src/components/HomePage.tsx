@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 
 interface InterviewConfig {
@@ -74,10 +74,20 @@ export default function HomePage() {
     setInterviewHistory(history);
   };
 
+  const handleDeleteInterview = (interviewId: string, e: React.MouseEvent) => {
+    e.stopPropagation(); // 阻止事件冒泡
+    if (window.confirm('确定要删除这个面试记录吗？')) {
+      const existingHistory = JSON.parse(localStorage.getItem('interviewHistory') || '[]');
+      const updatedHistory = existingHistory.filter((item: InterviewConfig) => item.id !== interviewId);
+      localStorage.setItem('interviewHistory', JSON.stringify(updatedHistory));
+      setInterviewHistory(updatedHistory);
+    }
+  };
+
   // 组件挂载时加载历史记录
-  useState(() => {
+  useEffect(() => {
     loadInterviewHistory();
-  });
+  }, []);
 
   return (
     <div className="homepage">
@@ -100,9 +110,8 @@ export default function HomePage() {
             新建面试
           </button>
           <button 
-            className="new-interview-btn"
+            className="new-interview-btn audio-test-btn"
             onClick={() => navigate('/test/audio')}
-            style={{ marginLeft: '1rem', background: 'linear-gradient(135deg, #f59e0b, #d97706)' }}
           >
             <span className="btn-icon">🧪</span>
             音频识别测试
@@ -141,6 +150,13 @@ export default function HomePage() {
                       onClick={() => navigate(`/interview/${interview.id}`)}
                     >
                       继续面试
+                    </button>
+                    <button 
+                      className="delete-btn"
+                      onClick={(e) => handleDeleteInterview(interview.id, e)}
+                      title="删除面试"
+                    >
+                      🗑️
                     </button>
                   </div>
                 </div>

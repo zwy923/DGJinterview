@@ -51,10 +51,10 @@ class Settings(BaseSettings):
     VAD_MAX_SEGMENT: float = 8.0  # 最大段长 8s（防止长段堆积）
     
     # 流式识别配置
-    PARTIAL_INTERVAL: float = 0.5  # 部分结果产出间隔（秒）
+    PARTIAL_INTERVAL: float = 0.2  # 部分结果产出间隔（秒）
     
     # WebSocket 背压配置
-    WS_AUDIO_QUEUE_MAX_SIZE: int = 100  # 队列上限（约 2-3s 音频）
+    WS_AUDIO_QUEUE_MAX_SIZE: int = 128  # 队列上限（约 2-3s 音频）
     WS_AUDIO_QUEUE_DROP_OLDEST: bool = True  # 队列满时丢弃最旧
     
     # LLM配置
