@@ -1,4 +1,4 @@
-# 智能面试助手系统
+# 大狗叫面试助手
 
 一个基于 AI 的智能面试助手系统，提供实时语音识别、智能问答生成、RAG 检索等功能，帮助求职者更好地准备和应对面试。
 
@@ -100,7 +100,7 @@
 #### 1. 克隆项目
 
 ```bash
-git clone <repository-url>
+git clone https://github.com/zwy923/DGJinterview.git
 cd intervew
 ```
 
