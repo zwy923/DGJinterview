@@ -291,17 +291,31 @@ async def get_job_position_api(session_id: str):
 
 @router.post("/knowledge-base", response_model=KnowledgeBaseResponse)
 async def save_knowledge_base_api(request: KnowledgeBaseRequest):
-    """添加知识库条目（按session）"""
+    """添加知识库条目（按session，自动生成embedding）"""
     try:
         # 验证输入
         if not request.session_id or not request.title or not request.content:
             raise HTTPException(status_code=400, detail="session_id、title和content不能为空")
         
-        # 保存知识库条目（不生成embedding）
+        # 自动生成embedding用于向量检索
+        kb_embedding = None
+        try:
+            from services.embed_service import embedding_service
+            if embedding_service and embedding_service.api_key:
+                # 生成embedding（同步生成，确保保存时就有embedding）
+                kb_embedding = await embedding_service.embed(request.content)
+                if kb_embedding is not None:
+                    logger.info(f"为知识库条目生成embedding成功，session_id={request.session_id}, title={request.title[:50]}")
+                else:
+                    logger.warning(f"知识库embedding生成失败，将在查询时自动生成，session_id={request.session_id}")
+        except Exception as e:
+            logger.warning(f"生成知识库embedding时出错（将在查询时自动生成）: {e}")
+        
+        # 保存知识库条目（如果embedding生成成功则保存，否则为None）
         kb_id = await kb_dao.save_knowledge(
             title=request.title,
             content=request.content,
-            embedding=None,  # 不再生成embedding
+            embedding=kb_embedding,  # 如果生成成功则保存，否则为None（查询时会自动生成）
             metadata=request.metadata,
             session_id=request.session_id
         )

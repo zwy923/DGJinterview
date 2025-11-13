@@ -215,12 +215,12 @@ class KnowledgeBaseDAO:
         session_id: Optional[str] = None
     ) -> int:
         """
-        保存知识库条目
+        保存知识库条目（支持自动生成embedding）
         
         Args:
             title: 标题
             content: 内容
-            embedding: 向量嵌入（可选）
+            embedding: 向量嵌入（可选，如果为None且embedding服务可用，会自动生成）
             metadata: 元数据（可选）
             session_id: 会话ID（可选，用于隔离）
         
@@ -232,6 +232,17 @@ class KnowledgeBaseDAO:
             return 0
         
         try:
+            # 如果没有提供embedding，尝试自动生成
+            if embedding is None:
+                try:
+                    from services.embed_service import embedding_service
+                    if embedding_service and embedding_service.api_key:
+                        embedding = await embedding_service.embed(content)
+                        if embedding is not None:
+                            logger.info(f"为知识库条目自动生成embedding成功，session_id={session_id}, title={title[:50]}")
+                except Exception as e:
+                    logger.warning(f"自动生成知识库embedding失败: {e}")
+            
             embedding_str = None
             if embedding is not None:
                 embedding_str = f"[{','.join(map(str, embedding))}]"

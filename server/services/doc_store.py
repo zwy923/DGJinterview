@@ -117,13 +117,13 @@ class DocumentStore:
             # 转换为PostgreSQL格式
             embedding_str = f"[{','.join(map(str, query_emb))}]"
             
-            # 构建查询（使用余弦相似度）
+            # 构建查询（使用余弦相似度，只查询有embedding的记录）
             if session_id:
                 query = """
                     SELECT id, title, content, metadata,
                            1 - (embedding <=> $1::vector) as similarity
                     FROM knowledge_base
-                    WHERE session_id = $2
+                    WHERE session_id = $2 AND embedding IS NOT NULL
                     ORDER BY embedding <=> $1::vector
                     LIMIT $3
                 """
@@ -133,6 +133,7 @@ class DocumentStore:
                     SELECT id, title, content, metadata,
                            1 - (embedding <=> $1::vector) as similarity
                     FROM knowledge_base
+                    WHERE embedding IS NOT NULL
                     ORDER BY embedding <=> $1::vector
                     LIMIT $2
                 """

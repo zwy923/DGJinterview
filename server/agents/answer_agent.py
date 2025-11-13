@@ -102,13 +102,10 @@ class AnswerAgent:
 请基于以上内容，用一句话简短回答这个问题。"""
         else:
             # 正常模式：详细回答
-            prompt = f"""你是一位专业的后端开发面试者，回答问题，避免空泛的回答，要求有深度。
+            prompt = f"""你是一位专业的后端开发面试者，直接回答问题，避免空泛的回答，要求有深度，不废话。
 
 【当前问题】
 {question}
-
-【简历信息】
-{cv_section if cv_section else "（无）"}
 
 【岗位信息】
 {jd_section if jd_section else "（无）"}
@@ -120,7 +117,6 @@ class AnswerAgent:
 {dialogue_text if dialogue_text else "（无）"}
 
 请基于以上内容，生成一个详细、结构化的回答建议。回答要：
-- 结合简历中的相关经验
 - 与岗位要求对齐
 - 长度控制在6-12句话
 
