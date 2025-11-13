@@ -156,11 +156,24 @@ async def save_cv_api(request: CVRequest):
                 detail="PostgreSQL未连接，无法保存CV。请检查PostgreSQL服务是否运行，并查看服务器日志获取详细信息。"
             )
         
-        # 保存CV（不生成embedding）
+        # 保存CV（自动生成embedding用于向量检索）
+        cv_embedding = None
+        try:
+            from services.embed_service import embedding_service
+            if embedding_service and embedding_service.api_key:
+                # 异步生成embedding（不阻塞请求）
+                cv_embedding = await embedding_service.embed(request.content)
+                if cv_embedding is not None:
+                    logger.info(f"为CV生成embedding成功，user_id={request.user_id}")
+                else:
+                    logger.warning(f"CV embedding生成失败，将在查询时自动生成，user_id={request.user_id}")
+        except Exception as e:
+            logger.warning(f"生成CV embedding时出错（将在查询时自动生成）: {e}")
+        
         cv_id = await cv_dao.save_cv(
             user_id=request.user_id,
             content=request.content,
-            embedding=None,  # 不再生成embedding
+            embedding=cv_embedding,  # 如果生成成功则保存，否则为None（查询时会自动生成）
             metadata=request.metadata
         )
         

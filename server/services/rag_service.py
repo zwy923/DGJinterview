@@ -1,6 +1,6 @@
 """
 RAG检索服务
-CV/JD使用关键词提取，外部知识库使用向量检索
+CV使用向量检索（整体embedding），JD使用关键词提取，外部知识库使用向量检索
 """
 import re
 from typing import List, Optional
@@ -10,6 +10,7 @@ from core.types import RagBundle, DocChunk
 from core.config import agent_settings
 from services.embed_service import embedding_service
 from services.doc_store import doc_store
+from storage.dao import cv_dao
 from logs import setup_logger
 
 logger = setup_logger(__name__)
@@ -44,9 +45,69 @@ class RAGService:
         keywords = [w for w in words if len(w) > 1 and w not in stop_words]
         return keywords[:10]  # 最多返回10个关键词
     
-    def _select_cv_snippets(self, cv_text: str, question: str) -> List[str]:
+    async def _select_cv_snippets_by_embedding(self, question: str) -> List[str]:
         """
-        从CV中提取相关片段（基于关键词匹配，优先匹配项目/实习相关内容）
+        使用向量检索从CV中提取相关片段（整体embedding，不分片）
+        
+        Args:
+            question: 问题文本
+        
+        Returns:
+            相关CV内容列表（如果找到相似CV，返回其完整内容）
+        """
+        if not question or not question.strip():
+            return []
+        
+        try:
+            # 检查embedding服务是否可用
+            if embedding_service is None or not embedding_service.api_key:
+                logger.warning("Embedding服务不可用，降级到关键词匹配")
+                return []
+            
+            # 生成问题的embedding
+            query_emb = await embedding_service.embed(question)
+            if query_emb is None:
+                logger.warning("无法生成问题embedding，降级到关键词匹配")
+                return []
+            
+            # 从数据库搜索相似的CV（整体embedding）
+            # 注意：search_similar_cvs只会返回有embedding的CV
+            similar_cvs = await cv_dao.search_similar_cvs(query_emb, limit=1)
+            
+            if similar_cvs:
+                cv = similar_cvs[0]
+                cv_content = cv.get("content", "")
+                similarity = cv.get("similarity", 0)
+                
+                # 相似度阈值：0.3（降低阈值，因为CV是整体embedding，相似度可能较低）
+                if cv_content and similarity > 0.3:
+                    logger.info(f"向量检索找到相似CV，相似度: {similarity:.3f}")
+                    # 返回整个CV内容（不分片）
+                    return [cv_content]
+                else:
+                    logger.info(f"CV相似度过低: {similarity:.3f}，降级到关键词匹配")
+                    return []
+            else:
+                # 如果未找到，可能是CV没有embedding，尝试获取CV并自动生成embedding
+                logger.info("向量检索未找到相似CV，尝试获取CV并检查embedding状态")
+                try:
+                    cv_info = await cv_dao.get_default_cv(auto_generate_embedding=True)
+                    if cv_info and cv_info.get("content"):
+                        # 如果CV存在但没有embedding，get_default_cv会自动生成
+                        # 但生成是异步的，可能需要等待
+                        # 这里先返回空，让降级逻辑处理
+                        logger.info("CV存在但可能缺少embedding，已触发自动生成，降级到关键词匹配")
+                except Exception as e:
+                    logger.warning(f"获取CV时出错: {e}")
+                
+                return []
+        except Exception as e:
+            logger.warning(f"CV向量检索失败: {e}，降级到关键词匹配")
+            return []
+    
+    def _select_cv_snippets_keyword(self, cv_text: str, question: str) -> List[str]:
+        """
+        从CV中提取相关片段（基于关键词匹配，降级方案）
         
         Args:
             cv_text: CV文本
@@ -270,16 +331,17 @@ class RAGService:
         
         Args:
             question: 问题文本
-            cv_text: CV文本
+            cv_text: CV文本（用于降级方案）
             jd_text: JD文本
             session_id: 会话ID（用于外部知识库过滤）
         
         Returns:
             RagBundle对象
         """
-        # 并行执行CV/JD提取和外部知识库检索
+        # 并行执行CV向量检索、JD提取和外部知识库检索
+        # CV使用向量检索（整体embedding，不分片）
         cv_task = asyncio.create_task(
-            asyncio.to_thread(self._select_cv_snippets, cv_text, question)
+            self._select_cv_snippets_by_embedding(question)
         )
         jd_task = asyncio.create_task(
             asyncio.to_thread(self._select_jd_snippets, jd_text, question)
@@ -302,7 +364,13 @@ class RAGService:
         
         # 等待CV/JD提取完成
         cv_chunks = await cv_task
-        jd_chunks = await jd_task
+        
+        # 如果向量检索失败或未找到，降级到关键词匹配
+        if not cv_chunks and cv_text:
+            logger.info("CV向量检索未找到结果，降级到关键词匹配")
+            cv_chunks = await asyncio.to_thread(
+                self._select_cv_snippets_keyword, cv_text, question
+            )
         
         # 根据token预算裁剪
         cv_chunks, jd_chunks, ext_chunks = self._trim_to_budget(

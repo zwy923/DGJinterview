@@ -33,18 +33,25 @@ export default function LeftPanel({
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [selectedMessages, setSelectedMessages] = useState<Set<string>>(new Set());
   const [isAnswering, setIsAnswering] = useState(false);
+  const [answeredMessageIds, setAnsweredMessageIds] = useState<Set<string>>(new Set()); // 已回答过的消息ID
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const chatMessagesRef = useRef<HTMLDivElement>(null);
   const shouldAutoScrollRef = useRef(true);
   const scrollTimeoutRef = useRef<number | null>(null);
 
-  // 自动勾选面试官的消息
+  // 自动勾选新的面试官消息（只选择未回答过的）
   useEffect(() => {
+    // 只处理新消息，避免重复处理
     const newSelected = new Set(selectedMessages);
     let hasNewSelection = false;
     
     chatHistory.forEach((msg) => {
-      if (msg.speaker === 'interviewer' && !selectedMessages.has(msg.id)) {
+      // 只自动选择新的、未回答过的面试官消息
+      // 排除部分结果（isPartial）和已回答的消息
+      if (msg.speaker === 'interviewer' 
+          && !msg.isPartial
+          && !selectedMessages.has(msg.id) 
+          && !answeredMessageIds.has(msg.id)) {
         newSelected.add(msg.id);
         hasNewSelection = true;
       }
@@ -53,7 +60,8 @@ export default function LeftPanel({
     if (hasNewSelection) {
       setSelectedMessages(newSelected);
     }
-  }, [chatHistory]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chatHistory, answeredMessageIds]); // 依赖完整数组，但通过条件判断避免重复处理
 
   // 切换消息选中状态
   const toggleMessageSelection = (messageId: string) => {
@@ -145,6 +153,14 @@ export default function LeftPanel({
         if (onAgentReply) {
           onAgentReply(question, reply.trim());
         }
+        
+        // 回答完成后，标记这些消息为已回答，并清除选择
+        const answeredIds = new Set(answeredMessageIds);
+        interviewerMsgs.forEach(msg => {
+          answeredIds.add(msg.id);
+        });
+        setAnsweredMessageIds(answeredIds);
+        setSelectedMessages(new Set()); // 清除所有选择
       } else if (!fullReply) {
         alert("未能获取回答，请稍后重试");
       }
