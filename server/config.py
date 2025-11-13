@@ -36,7 +36,10 @@ class Settings(BaseSettings):
     ASR_ENABLE_NUMBER_NORMALIZATION: bool = os.getenv("ASR_ENABLE_NUMBER_NORMALIZATION", "true").lower() == "true"
     ASR_ENABLE_REPEAT_REMOVAL: bool = os.getenv("ASR_ENABLE_REPEAT_REMOVAL", "true").lower() == "true"
     ASR_ENABLE_PUNCTUATION_CORRECTION: bool = os.getenv("ASR_ENABLE_PUNCTUATION_CORRECTION", "true").lower() == "true"
-    ASR_MIN_SENTENCE_LENGTH: int = int(os.getenv("ASR_MIN_SENTENCE_LENGTH", "6"))  # 最小句子长度（字符数），过滤短碎片
+    ASR_MIN_SENTENCE_LENGTH: int = int(os.getenv("ASR_MIN_SENTENCE_LENGTH", "8"))  # 最小句子长度（字符数），降低阈值提高响应速度
+    
+    # ASR 去噪配置
+    ASR_ENABLE_DENOISE: bool = os.getenv("ASR_ENABLE_DENOISE", "true").lower() == "true"  # 是否启用音频去噪
     
     # 语言路由配置（预留）
     ASR_ENABLE_LANG_ID: bool = os.getenv("ASR_ENABLE_LANG_ID", "false").lower() == "true"
@@ -51,15 +54,15 @@ class Settings(BaseSettings):
     AUDIO_NOISE_DECAY: float = 0.997  # 噪声水平衰减系数（稳定噪声估计，避免过于灵敏）
     
     # VAD 端点检测配置（三段式）- 优化为准确性和速度平衡
-    VAD_PRE_SPEECH_PADDING: float = 0.15  # 前置缓冲 150ms（减少延迟）
-    VAD_END_SILENCE: float = 1.2  # 尾静音 1200ms（更自然地一整句输出，避免被呼吸声或顿音误判）
-    VAD_MAX_SEGMENT: float = 10.0  # 最大段长 10s（防止过长导致延迟）
+    VAD_PRE_SPEECH_PADDING: float = 0.2  # 前置缓冲 200ms（保留更多上下文，提高准确度）
+    VAD_END_SILENCE: float = 1.0  # 尾静音 900ms（平衡速度和完整度，减少延迟）
+    VAD_MAX_SEGMENT: float = 8.0  # 最大段长 8s（更快切分，减少延迟和内存占用）
     
     # 流式识别配置
-    PARTIAL_INTERVAL: float = 0.4  # 部分结果产出间隔 400ms（避免UI抖动，更自然的更新频率）
+    PARTIAL_INTERVAL: float = 0.3  # 部分结果产出间隔 300ms（更快的反馈，提升用户体验）
     
     # WebSocket 背压配置
-    WS_AUDIO_QUEUE_MAX_SIZE: int = 12  # 队列上限（约 2.4s 音频，配合chunk=3200使用）
+    WS_AUDIO_QUEUE_MAX_SIZE: int = 24  # 队列上限（约 2.4s 音频，配合chunk=3200使用）
     WS_AUDIO_QUEUE_DROP_OLDEST: bool = True  # 队列满时丢弃最旧
     
     # PostgreSQL配置

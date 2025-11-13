@@ -364,6 +364,7 @@ class RAGService:
         
         # 等待CV/JD提取完成
         cv_chunks = await cv_task
+        jd_chunks = await jd_task  # 等待JD提取完成
         
         # 如果向量检索失败或未找到，降级到关键词匹配
         if not cv_chunks and cv_text:

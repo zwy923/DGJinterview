@@ -114,14 +114,41 @@ async def handle_audio_websocket(ws: WebSocket, session_id: str, source: str):
     
     # 音频处理任务
     async def audio_processor():
-        """音频处理协程"""
+        """音频处理协程（优化背压控制）"""
+        consecutive_drops = 0  # 连续丢弃计数
+        max_consecutive_drops = 5  # 最大连续丢弃次数
+        
         try:
             while not state.stop:
                 try:
+                    # 检查队列状态，如果队列太满，主动丢弃一些旧数据
+                    queue_size = state.audio_q.qsize()
+                    if queue_size > settings.WS_AUDIO_QUEUE_MAX_SIZE * 0.8:  # 队列超过80%满
+                        # 丢弃最旧的几个块，避免堆积
+                        drops = 0
+                        while queue_size > settings.WS_AUDIO_QUEUE_MAX_SIZE * 0.5 and drops < 3:
+                            try:
+                                state.audio_q.get_nowait()
+                                drops += 1
+                                queue_size -= 1
+                            except asyncio.QueueEmpty:
+                                break
+                        if drops > 0:
+                            logger.warning(f"队列接近满载 ({queue_size}/{settings.WS_AUDIO_QUEUE_MAX_SIZE})，主动丢弃 {drops} 个旧音频块 (session={session_id})")
+                            consecutive_drops += drops
+                            # 如果连续丢弃太多，短暂休眠，让处理追上
+                            if consecutive_drops >= max_consecutive_drops:
+                                await asyncio.sleep(0.05)
+                                consecutive_drops = 0
+                        else:
+                            consecutive_drops = 0
+                    
                     pcm_chunk = await asyncio.wait_for(
                         state.audio_q.get(),
                         timeout=pipeline.chunk_timeout
                     )
+                    consecutive_drops = 0  # 成功获取，重置计数
+                    
                     try:
                         await pipeline.process_audio_chunk(
                             pcm_chunk,
@@ -132,6 +159,7 @@ async def handle_audio_websocket(ws: WebSocket, session_id: str, source: str):
                         logger.error(f"处理音频块错误 (session={session_id}): {e}", exc_info=True)
                         # 继续处理下一块，不中断
                 except asyncio.TimeoutError:
+                    # 超时是正常的，继续等待
                     continue
                 except Exception as e:
                     logger.error(f"音频处理循环错误 (session={session_id}): {e}", exc_info=True)
